@@ -74,7 +74,8 @@ def main():
                 return
             case _:
                 print("Use w/s or +/- or c/d/q")
-        print(chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
+        print("current chord:", chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
+        print("current chord progression:", chord_prog)
 
 
 print(main())
