@@ -1,0 +1,144 @@
+import pygame
+import random
+
+WIDTH = 88 + 1
+HEIGHT = 20
+
+colors = [
+    (0, 0, 0),
+    (120, 37, 179),
+    (100, 179, 179),
+    (80, 34, 22),
+    (80, 134, 22),
+    (180, 34, 22),
+    (180, 34, 122),
+]
+
+
+class Figure:
+    x = 0
+    y = 0
+
+    figures = [
+        [1],
+        [1,5]
+    ]
+
+    def __init__(self, x, y):
+        self.x = random.randint(-1, WIDTH - 3) #note
+        self.y = 0
+        self.type = random.randint(0, len(self.figures) - 1) #lenght of note
+        self.color = random.randint(1, len(colors) - 1)
+
+
+    def image(self):
+        return self.figures[self.type]
+
+
+class Tetris:
+    def __init__(self, height, width):
+        self.state = "start"
+        self.field = []
+        self.height = 0
+        self.width = 0
+        self.x = 100
+        self.y = 60
+        self.zoom = 13
+        self.figure = []
+    
+        self.height = height
+        self.width = width
+        self.field = []
+        self.state = "start"
+        for i in range(height):
+            new_line = []
+            for j in range(width):
+                new_line.append(0)
+            self.field.append(new_line)
+
+    def new_figure(self):
+        self.figure.append(Figure(3, 0))
+        if len(self.figure) > 19:
+            self.figure.pop(0)
+
+
+
+    def go_down(self):
+        for k in range(len(self.figure)):
+            self.figure[k].y += 0.1
+            
+
+
+
+
+# Initialize the game engine
+pygame.init()
+print(" starting ")
+
+# Define some colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GRAY = (128, 128, 128)
+
+size = (1400, 600) # width, height
+screen = pygame.display.set_mode(size)
+
+pygame.display.set_caption("Jazz")
+
+# Loop until the user clicks the close button.
+done = False
+clock = pygame.time.Clock()
+fps = 60 #bpm
+game = Tetris(HEIGHT, WIDTH) #height, width
+counter = 0
+
+pressing_down = False
+
+while not done:
+    counter += 1
+    if counter > 100000:
+        counter = 0
+
+    if counter % (10) == 0 or pressing_down:
+        if game.state == "start":
+            game.new_figure()
+            print(game.figure)
+    
+    if counter % (1) == 0 or pressing_down:
+        if game.state == "start":
+            game.go_down()
+            
+
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            done = True
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                game.__init__(HEIGHT, WIDTH) 
+
+    screen.fill(WHITE)
+
+    for i in range(game.height):
+        for j in range(game.width):
+            pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j, game.y + game.zoom * i, 1, game.zoom], 1)
+
+
+    if game.figure is not None:
+        for i in range(4):
+            for j in range(4):
+                p = i * 4 + j
+                for k in range(len(game.figure)):              
+                    if p in game.figure[k].image():
+                        pygame.draw.rect(screen, colors[game.figure[k].color],
+                            [game.x + game.zoom * (j + game.figure[k].x) + 1,
+                            game.y + game.zoom * (i + game.figure[k].y) + 1,
+                            game.zoom - 2, game.zoom - 2])
+
+    #font1 = pygame.font.SysFont('Calibri', 65, True, False)
+    #text_game_over1 = font1.render("Press ESC", True, (255, 215, 0))
+
+    pygame.display.flip()
+    clock.tick(fps)
+
+pygame.quit()
