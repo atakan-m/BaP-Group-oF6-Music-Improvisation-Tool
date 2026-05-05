@@ -18,10 +18,16 @@ class Figure:
     y = 0
 
     figures = [
-        [2,5,6,10],
-        [2,5,6,7],
-        [1,2,3,6],
-        [1,5,6,9],
+        [2,5,6,10], #left
+        [2,5,6,7], #up
+        [1,2,3,6], #down
+        [1,5,6,9], #right
+    ]
+    text = [
+        "Left",
+        "Up",
+        "Down",
+        "Right"
     ]
 
     def __init__(self, index, type):
@@ -29,10 +35,14 @@ class Figure:
         self.y = 0
         self.type = index #lenght of note
         self.color = index
+        self.direc = index
 
 
     def image(self):
         return self.figures[self.type]
+    
+    def direction(self):
+        return self.text[self.direc]
 
 
 class Tetris:
@@ -62,9 +72,9 @@ class Tetris:
         self.figure.append(Figure(random.randint(0,3),random.randint(0,3)))
         if self.figure[0].y > 19:
             self.figure.pop(0)
-            if not self.fuck:
+            if not self.fuck and (self.score - 1) >= 0:
                 self.score -= 1
-                self.fuck = False
+            self.fuck = False
         
         
 
@@ -139,28 +149,28 @@ while not done:
                 if game.figure[0].y > 15 and game.figure[0].x == -1:
                     game.score += 1
                     game.figure.pop(0)
-                else:
+                elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             if event.key == pygame.K_UP:
                 if game.figure[0].y > 15 and game.figure[0].x == 2:
                     game.score += 1
                     game.figure.pop(0)
-                else:
+                elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             if event.key == pygame.K_DOWN:
                 if game.figure[0].y > 15 and game.figure[0].x == 5:
                     game.score += 1
                     game.figure.pop(0)
-                else:
+                elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             if event.key == pygame.K_RIGHT:
                 if game.figure[0].y > 15 and game.figure[0].x == 8:
                     game.score += 1
                     game.figure.pop(0)
-                else:
+                elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             
@@ -175,8 +185,8 @@ while not done:
     pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* 12, game.y + game.zoom * 20] )
     pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* 12, game.y + game.zoom * 15] )
 
-    
-
+    font = pygame.font.SysFont('Calibri', 10, True, False)
+    font1 = pygame.font.SysFont('Calibri', 65, True, False)
 
     if game.figure is not None:
         for i in range(4):
@@ -188,8 +198,11 @@ while not done:
                             [game.x + game.zoom * (j + game.figure[k].x) + 1,
                             game.y + game.zoom * (i + game.figure[k].y) + 1,
                             game.zoom - 2, game.zoom - 2])
+    if game.figure is not None:
+        for k in range(len(game.figure)):
+            screen.blit(font.render(game.figure[k].direction(), True, RED), [game.x + game.zoom * (game.figure[k].x + 2),
+                game.y + game.zoom * (game.figure[k].y + 1)  ])
 
-    font1 = pygame.font.SysFont('Calibri', 65, True, False)
     text = font1.render("Score: " + str(game.score), True, BLACK)
 
     screen.blit(text, [0, 0])
