@@ -1,7 +1,8 @@
 import pygame
 import random
+import numpy as np
 
-WIDTH = 4 + 1
+WIDTH = 12
 HEIGHT = 20
 
 colors = [
@@ -12,40 +13,77 @@ colors = [
     (80, 134, 22),
 ]
 
+sheet = [[0,0,0,0,0,0,0,1,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,1,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,1,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,1,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,1,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0]]
+
+
 
 class Figure:
     x = 0
     y = 0
 
     figures = [
-        [2,5,6,10], #left
-        [2,5,6,7], #up
-        [1,2,3,6], #down
-        [1,5,6,9], #right
-    ]
-    text = [
-        "Left",
-        "Up",
-        "Down",
-        "Right"
+        [0,1,2,3,4,5,6,7,8,9,10,11]
+        ]
+    Note_list = [
+                  "A",
+                  "A#",
+                  "B",
+                  "C",
+                  "C#",
+                  "D",
+                  "D#",
+                  "E",
+                  "F",
+                  "F#",
+                  "G",
+                  "G#"
     ]
 
-    def __init__(self, index, type):
-        self.x = 3 * index - 1 #note
+    def __init__(self, Notes):
+        self.x = 0 #note
         self.y = 0
-        self.type = index #lenght of note
-        self.color = index
-        self.direc = index
+        self.type = Notes#lenght of note
+        self.color = 0
+        self.direc = Notes
 
 
     def image(self):
-        return self.figures[self.type]
+        return np.array([self.figures]) * np.array([self.type])
     
     def direction(self):
-        return self.text[self.direc]
+        #print([self.Note_list[i] for i in range(len(self.direc)) if self.direc[i] == 1])
+        return [self.Note_list[i] if self.direc[i] == 1 else '' for i in range(len(self.direc))]
 
 
-class Tetris:
+class Music:
     def __init__(self, height, width):
         self.state = "start"
         self.score = 0
@@ -57,6 +95,7 @@ class Tetris:
         self.zoom = 13
         self.figure = []
         self.fuck = False
+        self.note = 0
     
         self.height = height
         self.width = width
@@ -69,13 +108,15 @@ class Tetris:
             self.field.append(new_line)
 
     def new_figure(self):
-        self.figure.append(Figure(random.randint(0,3),random.randint(0,3)))
-        if self.figure[0].y > 19:
-            self.figure.pop(0)
-            if not self.fuck and (self.score - 1) >= 0:
-                self.score -= 1
-            self.fuck = False
-        
+            if self.note < len(sheet):
+                self.figure.append(Figure(sheet[self.note]))
+                self.note += 1
+                
+            if self.figure[0].y > 19:
+                self.figure.pop(0)
+                if not self.fuck and (self.score - 1) >= 0:
+                    self.score -= 1
+                self.fuck = False
         
 
 
@@ -108,7 +149,7 @@ pygame.display.set_caption("Jazz")
 done = False
 clock = pygame.time.Clock()
 fps = 60 #bpm
-game = Tetris(HEIGHT, WIDTH) #height, width
+game = Music(HEIGHT, WIDTH) #height, width
 counter = 0
 
 pressing_down = False
@@ -118,7 +159,7 @@ while not done:
     if counter > 100000:
         counter = 0
 
-    if counter % (50) == 0 or pressing_down:
+    if counter % (20) == 0 or pressing_down:
         if game.state == "start":
             game.new_figure()
             
@@ -126,18 +167,7 @@ while not done:
     if counter % (1) == 0 or pressing_down:
         if game.state == "start":
             game.go_down()
-
-    if game.figure:
-        if game.figure[0].y > 15 and game.figure[0].x == -1:
-            print("Left")
-        if game.figure[0].y > 15 and game.figure[0].x == 2:
-            print("Up")
-        if game.figure[0].y > 15 and game.figure[0].x == 5:
-            print("down")
-        if game.figure[0].y > 15 and game.figure[0].x == 8:
-            print("Right")
             
-
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -179,8 +209,8 @@ while not done:
     screen.fill(WHITE)
 
     for i in range(game.height):
-        for j in range(game.width):
-            pygame.draw.rect(screen, GRAY, [game.x + game.zoom * 3* j, game.y + game.zoom * i, 1, game.zoom], 1)
+        for j in range(game.width + 1):
+            pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j, game.y + game.zoom * i, 1, game.zoom], 1)
     pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom* 0], [game.x + game.zoom* 12, game.y + game.zoom * 0] )
     pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* 12, game.y + game.zoom * 20] )
     pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* 12, game.y + game.zoom * 15] )
@@ -189,19 +219,21 @@ while not done:
     font1 = pygame.font.SysFont('Calibri', 65, True, False)
 
     if game.figure is not None:
-        for i in range(4):
-            for j in range(4):
-                p = i * 4 + j
+        for i in range(1):
+            for j in range(12):
+                p = i * 12 + j
                 for k in range(len(game.figure)):              
                     if p in game.figure[k].image():
                         pygame.draw.rect(screen, colors[game.figure[k].color],
-                            [game.x + game.zoom * (j + game.figure[k].x) + 1,
+                            [game.x + game.zoom * (j + game.figure[k].x) + 2,
                             game.y + game.zoom * (i + game.figure[k].y) + 1,
-                            game.zoom - 2, game.zoom - 2])
+                            game.zoom-3, game.zoom-2])
     if game.figure is not None:
         for k in range(len(game.figure)):
-            screen.blit(font.render(game.figure[k].direction(), True, RED), [game.x + game.zoom * (game.figure[k].x + 2),
-                game.y + game.zoom * (game.figure[k].y + 1)  ])
+            for h in range(len(game.figure[k].direction())):
+                if game.figure[k].direction()[h]:
+                    screen.blit(font.render(game.figure[k].direction()[h], True, WHITE), [game.x + game.zoom * (h) + 2,
+                        game.y + game.zoom * (game.figure[k].y)])
 
     text = font1.render("Score: " + str(game.score), True, BLACK)
 
