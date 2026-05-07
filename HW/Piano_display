@@ -13,44 +13,30 @@ colors = [
     (80, 134, 22),
 ]
 
-sheet = [[0,0,0,0,0,0,0,1,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,1,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,1,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,1,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0]]
+sheet = [[4,0,0,0,0,0,0,0,1,0,0,0,0],
+         [4,0,0,0,0,0,1,0,0,0,0,0,0],
+         [8,0,0,0,1,0,0,0,0,0,0,0,0],
+         [4,0,0,0,0,0,0,0,1,0,0,0,0],
+         [4,0,0,0,0,0,1,0,0,0,0,0,0],
+         [8,0,0,0,1,0,0,0,0,0,0,0,0],
+         [2,0,0,0,1,0,0,0,0,0,0,0,0],
+         [2,0,0,0,1,0,0,0,0,0,0,0,0],
+         [2,0,0,0,1,0,0,0,0,0,0,0,0],
+         [2,0,0,0,1,0,0,0,0,0,0,0,0],
+         [2,0,0,0,0,0,1,0,0,0,0,0,0],
+         [2,0,0,0,0,0,1,0,0,0,0,0,0],
+         [2,0,0,0,0,0,1,0,0,0,0,0,0],
+         [2,0,0,0,0,0,1,0,0,0,0,0,0],
+         [4,0,0,0,0,0,0,0,1,0,0,0,0],
+         [4,0,0,0,0,0,1,0,0,0,0,0,0],
+         [8,0,0,0,1,0,0,0,0,0,0,0,0]]
 
 
 
 class Figure:
-    x = 0
-    y = 0
 
     figures = [
-        [0,1,2,3,4,5,6,7,8,9,10,11]
+        [1,2,3,4,5,6,7,8,9,10,11,12]
         ]
     Note_list = [
                   "A",
@@ -70,17 +56,17 @@ class Figure:
     def __init__(self, Notes):
         self.x = 0 #note
         self.y = 0
-        self.type = Notes#lenght of note
+        self.length = Notes[0] #lenght of note
         self.color = 0
-        self.direc = Notes
+        self.tune = Notes[1:] #Name of note
 
 
     def image(self):
-        return np.array([self.figures]) * np.array([self.type])
+        return np.array([self.figures]) * np.array([self.tune])
     
     def direction(self):
         #print([self.Note_list[i] for i in range(len(self.direc)) if self.direc[i] == 1])
-        return [self.Note_list[i] if self.direc[i] == 1 else '' for i in range(len(self.direc))]
+        return [self.Note_list[i] if self.tune[i] == 1 else '' for i in range(len(self.tune))]
 
 
 class Music:
@@ -96,6 +82,7 @@ class Music:
         self.figure = []
         self.fuck = False
         self.note = 0
+        self.delay = 0
     
         self.height = height
         self.width = width
@@ -108,11 +95,13 @@ class Music:
             self.field.append(new_line)
 
     def new_figure(self):
-            if self.note < len(sheet):
+            if self.note < len(sheet) and self.delay == 0:
                 self.figure.append(Figure(sheet[self.note]))
+                self.delay = sheet[self.note][0] 
                 self.note += 1
+            self.delay -= 1
                 
-            if self.figure[0].y > 19:
+            if self.figure[0].y > 19 + game.figure[0].length:
                 self.figure.pop(0)
                 if not self.fuck and (self.score - 1) >= 0:
                     self.score -= 1
@@ -159,7 +148,7 @@ while not done:
     if counter > 100000:
         counter = 0
 
-    if counter % (20) == 0 or pressing_down:
+    if counter % (10) == 0 or pressing_down:
         if game.state == "start":
             game.new_figure()
             
@@ -176,28 +165,28 @@ while not done:
             if event.key == pygame.K_ESCAPE:
                 game.__init__(HEIGHT, WIDTH)
             if event.key == pygame.K_LEFT:
-                if game.figure[0].y > 15 and game.figure[0].x == -1:
+                if game.figure[0].y > 15 and game.figure[0].x == 0:
                     game.score += 1
                     game.figure.pop(0)
                 elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             if event.key == pygame.K_UP:
-                if game.figure[0].y > 15 and game.figure[0].x == 2:
+                if game.figure[0].y > 15 and game.figure[0].x == 1:
                     game.score += 1
                     game.figure.pop(0)
                 elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             if event.key == pygame.K_DOWN:
-                if game.figure[0].y > 15 and game.figure[0].x == 5:
+                if game.figure[0].y > 15 and game.figure[0].x == 2:
                     game.score += 1
                     game.figure.pop(0)
                 elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
             if event.key == pygame.K_RIGHT:
-                if game.figure[0].y > 15 and game.figure[0].x == 8:
+                if game.figure[0].y > 15 and game.figure[0].x == 3:
                     game.score += 1
                     game.figure.pop(0)
                 elif game.score - 1 > 0:
@@ -223,17 +212,17 @@ while not done:
             for j in range(12):
                 p = i * 12 + j
                 for k in range(len(game.figure)):              
-                    if p in game.figure[k].image():
+                    if p in game.figure[k].image() - 1:
                         pygame.draw.rect(screen, colors[game.figure[k].color],
                             [game.x + game.zoom * (j + game.figure[k].x) + 2,
-                            game.y + game.zoom * (i + game.figure[k].y) + 1,
-                            game.zoom-3, game.zoom-2])
+                            game.y + game.zoom * (i + game.figure[k].y - game.figure[k].length) + 1,
+                            game.zoom-3, game.zoom * game.figure[k].length - 3])
     if game.figure is not None:
         for k in range(len(game.figure)):
             for h in range(len(game.figure[k].direction())):
                 if game.figure[k].direction()[h]:
                     screen.blit(font.render(game.figure[k].direction()[h], True, WHITE), [game.x + game.zoom * (h) + 2,
-                        game.y + game.zoom * (game.figure[k].y)])
+                        game.y + game.zoom * (game.figure[k].y - game.figure[k].length)])
 
     text = font1.render("Score: " + str(game.score), True, BLACK)
 
