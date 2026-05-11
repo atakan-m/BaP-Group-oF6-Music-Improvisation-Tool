@@ -4,36 +4,25 @@ import numpy as np
 
 WIDTH = 36
 HEIGHT = 20
+bpm = 80 #bpm
 
 colors = [
     (0, 0, 0),
-    (120, 37, 179),
-    (100, 179, 179),
-    (80, 34, 22),
-    (80, 134, 22),
 ]
-White_keys = [1,3,5,6,8,10,12,13,15,17,18,20,22,24,25,27,29,30,32,34,36]
-Black_keys = [2,4,7,9,11,14,16,19,21,23,26,28,31,33,35]
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
 
-sheet = [[1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],
-         [2,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-         [4,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [4,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [8,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [4,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [4,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
-         [16,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
-         [4,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
-         [9,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
-         [3,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
-         [4,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
-         [4,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-         [11,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
-         [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
-         [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
-         [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0]]
+sheet = [[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0],
+         [1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0],
+         [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+         [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+         [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0],
+         [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+         [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         ]
 
 
 
@@ -53,9 +42,9 @@ class Figure:
     def __init__(self, Notes):
         self.x = 0 #note
         self.y = 0
-        self.length = Notes[0] #lenght of note
+        self.length = 1 #lenght of note
         self.color = 0
-        self.tune = Notes[1:] #Name of note
+        self.tune = Notes #Name of note
 
 
     def image(self):
@@ -63,7 +52,7 @@ class Figure:
     
     def direction(self):
         #print([self.Note_list[i] for i in range(len(self.direc)) if self.direc[i] == 1])
-        return [self.Note_list[i] if self.tune[i] == 1 else '' for i in range(len(self.tune))]
+        return [self.Note_list[i] if self.tune[i] != 0 else '' for i in range(len(self.tune))]
 
 
 class Music:
@@ -78,7 +67,7 @@ class Music:
         self.figure = []
         self.fuck = False
         self.note = 0
-        self.delay = 0
+        #self.delay = 0
         self.beat_bars = [0]
     
         self.sheet = sheet
@@ -86,11 +75,11 @@ class Music:
         self.width = width
 
     def new_figure(self):
-            if self.note < len(self.sheet) and self.delay == 0:
+            if self.note < len(self.sheet): #and self.delay == 0:
                 self.figure.append(Figure(self.sheet[self.note]))
-                self.delay = self.sheet[self.note][0] 
+                #self.delay = self.sheet[self.note][0] 
                 self.note += 1
-            self.delay -= 1
+            #self.delay -= 1
                 
             if self.figure[0].y > 19 + game.figure[0].length:
                 self.figure.pop(0)
@@ -136,7 +125,7 @@ pygame.display.set_caption("Jazz")
 # Loop until the user clicks the close button.
 done = False
 clock = pygame.time.Clock()
-bpm = 120 #bpm
+
 game = Music(HEIGHT, WIDTH, sheet) #height, width
 counter = 0
 
@@ -153,7 +142,6 @@ while not done:
     
     if counter % (16*16) == 0:
         game.new_beatbar()
-        print("beatbar!")
             
     
     if counter % (1) == 0 or pressing_down:
@@ -225,11 +213,11 @@ while not done:
             for j in range(WIDTH):
                 p = i * WIDTH + j
                 for k in range(len(game.figure)):              
-                    if p in game.figure[k].image() - 1:
+                    if p in abs(game.figure[k].image()) - 1:
                         pygame.draw.rect(screen, colors[game.figure[k].color],
                             [game.x + game.zoom * hor_pos[p] * 36/21 + 2 + game.zoom * (0.5/key_width[p] - 0.5),
                             game.y + game.zoom * (i + game.figure[k].y - game.figure[k].length) + 1,
-                            1.7* game.zoom * key_width[p] - 3, game.zoom * game.figure[k].length - 3])
+                            1.7* game.zoom * key_width[p] - 3, max(game.zoom, game.zoom - 3 * game.figure[k].tune[p]) - 3])
     if game.figure is not None:
         for k in range(len(game.figure)):
             for h in range(len(game.figure[k].direction())):
