@@ -2,7 +2,7 @@ import pygame
 import random
 import numpy as np
 
-WIDTH = 12
+WIDTH = 36
 HEIGHT = 20
 
 colors = [
@@ -12,45 +12,42 @@ colors = [
     (80, 34, 22),
     (80, 134, 22),
 ]
+White_keys = [1,3,5,6,8,10,12,13,15,17,18,20,22,24,25,27,29,30,32,34,36]
+Black_keys = [2,4,7,9,11,14,16,19,21,23,26,28,31,33,35]
+hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
+key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
 
-sheet = [[4,0,0,0,0,0,0,0,1,0,0,0,0],
-         [4,0,0,0,0,0,1,0,0,0,0,0,0],
-         [8,0,0,0,1,0,0,0,0,0,0,0,0],
-         [4,0,0,0,0,0,0,0,1,0,0,0,0],
-         [4,0,0,0,0,0,1,0,0,0,0,0,0],
-         [8,0,0,0,1,0,0,0,0,0,0,0,0],
-         [2,0,0,0,1,0,0,0,0,0,0,0,0],
-         [2,0,0,0,1,0,0,0,0,0,0,0,0],
-         [2,0,0,0,1,0,0,0,0,0,0,0,0],
-         [2,0,0,0,1,0,0,0,0,0,0,0,0],
-         [2,0,0,0,0,0,1,0,0,0,0,0,0],
-         [2,0,0,0,0,0,1,0,0,0,0,0,0],
-         [2,0,0,0,0,0,1,0,0,0,0,0,0],
-         [2,0,0,0,0,0,1,0,0,0,0,0,0],
-         [4,0,0,0,0,0,0,0,1,0,0,0,0],
-         [4,0,0,0,0,0,1,0,0,0,0,0,0],
-         [8,0,0,0,1,0,0,0,0,0,0,0,0]]
+sheet = [[1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],
+         [2,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+         [4,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [4,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [8,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [4,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [4,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],
+         [16,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
+         [4,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
+         [9,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0],
+         [3,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+         [4,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+         [4,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
+         [11,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
+         [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0],
+         [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],
+         [4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0]]
 
 
 
 class Figure:
 
     figures = [
-        [1,2,3,4,5,6,7,8,9,10,11,12]
+        [1,2,3,4,5,6,7,8,9,10,11,12,
+         13,14,15,16,17,18,19,20,21,22,23,24,
+         25,26,27,28,29,30,31,32,33,34,35,36]
         ]
     Note_list = [
-                  "A",
-                  "A#",
-                  "B",
-                  "C",
-                  "C#",
-                  "D",
-                  "D#",
-                  "E",
-                  "F",
-                  "F#",
-                  "G",
-                  "G#"
+                  "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
+                  "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
+                  "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     ]
 
     def __init__(self, Notes):
@@ -70,34 +67,28 @@ class Figure:
 
 
 class Music:
-    def __init__(self, height, width):
+    def __init__(self, height, width, sheet):
         self.state = "start"
         self.score = 0
-        self.field = []
         self.height = 0
         self.width = 0
         self.x = 100
         self.y = 60
-        self.zoom = 13
+        self.zoom = 20
         self.figure = []
         self.fuck = False
         self.note = 0
         self.delay = 0
+        self.beat_bars = [0]
     
+        self.sheet = sheet
         self.height = height
         self.width = width
-        self.field = []
-        self.state = "start"
-        for i in range(height):
-            new_line = []
-            for j in range(width):
-                new_line.append(0)
-            self.field.append(new_line)
 
     def new_figure(self):
-            if self.note < len(sheet) and self.delay == 0:
-                self.figure.append(Figure(sheet[self.note]))
-                self.delay = sheet[self.note][0] 
+            if self.note < len(self.sheet) and self.delay == 0:
+                self.figure.append(Figure(self.sheet[self.note]))
+                self.delay = self.sheet[self.note][0] 
                 self.note += 1
             self.delay -= 1
                 
@@ -106,13 +97,21 @@ class Music:
                 if not self.fuck and (self.score - 1) >= 0:
                     self.score -= 1
                 self.fuck = False
+    
+    def new_beatbar(self):
+        self.beat_bars.append(0)
+
+        if len(self.beat_bars) > 5:
+            self.beat_bars.pop(0)
         
 
 
 
     def go_down(self):
         for k in range(len(self.figure)):
-            self.figure[k].y += 0.1
+            self.figure[k].y += (1/16)
+        for h in range(len(self.beat_bars)):
+            self.beat_bars[h] += (1/16)
             
             
 
@@ -129,7 +128,7 @@ WHITE = (255, 255, 255)
 GRAY = (128, 128, 128)
 RED = (255, 0, 0)
 
-size = (1400, 600) # width, height
+size = (1100, 600) # width, height
 screen = pygame.display.set_mode(size)
 
 pygame.display.set_caption("Jazz")
@@ -137,8 +136,8 @@ pygame.display.set_caption("Jazz")
 # Loop until the user clicks the close button.
 done = False
 clock = pygame.time.Clock()
-fps = 60 #bpm
-game = Music(HEIGHT, WIDTH) #height, width
+bpm = 120 #bpm
+game = Music(HEIGHT, WIDTH, sheet) #height, width
 counter = 0
 
 pressing_down = False
@@ -148,9 +147,13 @@ while not done:
     if counter > 100000:
         counter = 0
 
-    if counter % (10) == 0 or pressing_down:
+    if counter % (16) == 0 or pressing_down:
         if game.state == "start":
             game.new_figure()
+    
+    if counter % (16*16) == 0:
+        game.new_beatbar()
+        print("beatbar!")
             
     
     if counter % (1) == 0 or pressing_down:
@@ -198,38 +201,56 @@ while not done:
     screen.fill(WHITE)
 
     for i in range(game.height):
-        for j in range(game.width + 1):
-            pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j, game.y + game.zoom * i, 1, game.zoom], 1)
-    pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom* 0], [game.x + game.zoom* 12, game.y + game.zoom * 0] )
-    pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* 12, game.y + game.zoom * 20] )
-    pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* 12, game.y + game.zoom * 15] )
+        for j in range(21 + 1):
+            pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 36/21, game.y + game.zoom * i, 1, game.zoom], 1)
+    for j in range(3):
+        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 1.4, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 3.25, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 6.55, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 8.33, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 10.11, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom* 0], [game.x + game.zoom* WIDTH, game.y + game.zoom * 0] )
+    pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * 20] )
+    pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* WIDTH, game.y + game.zoom * 15] )
 
     font = pygame.font.SysFont('Calibri', 10, True, False)
     font1 = pygame.font.SysFont('Calibri', 65, True, False)
 
     if game.figure is not None:
         for i in range(1):
-            for j in range(12):
-                p = i * 12 + j
+            for j in range(WIDTH):
+                p = i * WIDTH + j
                 for k in range(len(game.figure)):              
                     if p in game.figure[k].image() - 1:
                         pygame.draw.rect(screen, colors[game.figure[k].color],
-                            [game.x + game.zoom * (j + game.figure[k].x) + 2,
+                            [game.x + game.zoom * hor_pos[p] * 36/21 + 2 + game.zoom * (0.5/key_width[p] - 0.5),
                             game.y + game.zoom * (i + game.figure[k].y - game.figure[k].length) + 1,
-                            game.zoom-3, game.zoom * game.figure[k].length - 3])
+                            1.7* game.zoom * key_width[p] - 3, game.zoom * game.figure[k].length - 3])
     if game.figure is not None:
         for k in range(len(game.figure)):
             for h in range(len(game.figure[k].direction())):
                 if game.figure[k].direction()[h]:
-                    screen.blit(font.render(game.figure[k].direction()[h], True, WHITE), [game.x + game.zoom * (h) + 2,
+                    screen.blit(font.render(game.figure[k].direction()[h], True, WHITE), [game.x + game.zoom * hor_pos[h] * 36/21 + 2 + (game.zoom *0.5),
                         game.y + game.zoom * (game.figure[k].y - game.figure[k].length)])
 
+    if game.beat_bars is not None:
+        for k in range(len(game.beat_bars)):
+            pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * game.beat_bars[k] - 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * game.beat_bars[k] - 20] )
+
+
     text = font1.render("Score: " + str(game.score), True, BLACK)
+    text1 = font1.render("BPM: " + str(bpm), True, BLACK)
+
 
     screen.blit(text, [0, 0])
+    screen.blit(text1, [game.zoom * 20 ,0])
     #text_game_over1 = font1.render("Press ESC", True, (255, 215, 0))
 
     pygame.display.flip()
-    clock.tick(fps)
+    clock.tick(bpm)
 
 pygame.quit()
