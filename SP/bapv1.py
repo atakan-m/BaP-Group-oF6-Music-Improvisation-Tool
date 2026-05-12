@@ -1,13 +1,14 @@
-import math
 import numpy as np
 import sounddevice as sd
+from scipy.signal import firwin
 
 # -----------------------Configuration-----------------------
 SAMPLE_RATE = 44100 # In Hertz.
 FFT_SIZE = 2048 # analyze time so around 46.4 ms of audio at a time.
-HOP_SIZE = 1024 # how far we slide for next analysis, every 23.2 ms.
+# HOP_SIZE = 1024 # how far we slide for next analysis, every 23.2 ms.
 SILENCE_THRESH = 0.008 # threshold of vol
 A4_FREQ = 440.0 # anchor music note
+SILENCE_THRESH = 0.02
 
 # Note names for string conversion
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -15,94 +16,87 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 # ----------------------Pre computed math-----------------
 WINDOW = np.hanning(FFT_SIZE) 
 FREQS = np.fft.rfftfreq(FFT_SIZE, d=1.0/SAMPLE_RATE) 
-LO = int(np.searchsorted(FREQS, 20)) 
-HI = int(np.searchsorted(FREQS, 4200)) 
+LO = 20 
+HI = 4200 
+bandpass = firwin(100, (LO, HI), pass_zero="bandpass", fs=SAMPLE_RATE)
 
 # ----------------------Detection Class-----------------
 class PureArrayDetector:
     def __init__(self):
         self.audio_buffer = np.zeros(FFT_SIZE, dtype=np.float32) 
         self.last_midi = None 
-        self.candidate_midi = None 
-        self.candidate_count = 0 
+        # self.candidate_midi = None 
+        # self.candidate_count = 0 
+        self.prev_energy = 0.0
+        # self.onset = False
+        self.melody = []
+        self.last_note = None
+        self.keyboard = np.zeros(88)
 
     def freq_to_midi(self, freq):
         """Converts a raw frequency in Hz into a standard MIDI note number."""
-        return round(12 * math.log2(freq / A4_FREQ) + 69)
+        return round(12 * np.log2((freq + 1e-60) / A4_FREQ) + 69)
+    
+    def midi_to_freq(self, midinote):
+        return 440 * 2.0**((midinote - 69) / 12.0)
 
     def midi_to_name(self, midi_note):
         """Converts a standard MIDI note number into its musical string representation."""
         return f"{NOTE_NAMES[midi_note % 12]}{(midi_note // 12) - 1}"
+    
+    def spec_diff_H(self, data):
+        return (data + np.abs(data)) / 2
 
     def callback(self, indata, frames, time_info, status):
         
-        # ─── A. Update the Audio Buffer ───
-        self.audio_buffer = np.roll(self.audio_buffer, -HOP_SIZE)   
-        self.audio_buffer[-HOP_SIZE:] = indata[:, 0]    
-
-        # ─── B. Check for Silence ───
-        rms = np.sqrt(np.mean(self.audio_buffer**2))    
+        # Noise Cancel and Update the Audio Buffer
+        self.audio_buffer = np.convolve(indata[:, 0], bandpass, "same")    
+        
+        # Check for onset (change to spectral flux later)
+        energy = np.sum(self.audio_buffer ** 2)
+        
+        rms = np.sqrt(energy / FFT_SIZE)
         
         if rms < SILENCE_THRESH: 
-            self.candidate_midi = None
-            self.candidate_count = 0
-            
             if self.last_midi is not None: 
                 # Print Silence alongside an empty array
                 print(f"{'Silence':<7} : {[0] * 88}", flush=True)
-                self.last_midi = None
-                
+                self.last_midi = None     
+                self
             return
+        
+        onset = energy > self.prev_energy * 1.5 #onset if energy is jumped by 50%
+        
 
-        # ─── C. Analyze the Pitch (Fast Fourier Transform) ───
-        magnitudes = np.abs(np.fft.rfft(self.audio_buffer * WINDOW)) 
-        peak_idx = np.argmax(magnitudes[LO:HI]) + LO 
-
-        # ─── D. Sub-bin Interpolation ───
-        if 0 < peak_idx < len(magnitudes) - 1:
-            l = magnitudes[peak_idx - 1]  
-            m = magnitudes[peak_idx]      
-            r = magnitudes[peak_idx + 1]  
+        #Apply Hann to reduce edge artifacts
+        spectrum = np.abs(np.fft.rfft(self.audio_buffer * WINDOW))
+        
+        #Find Onset
+        mask = (FREQS >= LO) & (FREQS <= HI)
+        freq_of_max = FREQS[mask][np.argmax(spectrum[mask])]
+        
+        note_num = self.freq_to_midi(freq_of_max)
+        note = self.midi_to_name(note_num)
+        
+        if onset or note != self.last_note:
+            self.melody.append(note)
+            self.last_note = note
             
-            denominator = 2 * m - l - r
-            offset = 0.5 * (r - l) / denominator if denominator != 0 else 0  
+            if 21 <= note_num <= 108: 
+                self.keyboard[note_num - 21] = 1
+            
+            marker = "* " if onset else "  "  # * marks a detected onset
+            print(f"{marker}{freq_of_max:.1f} Hz  ->  {note}   |  {' '.join(self.melody)}")
         else:
-            offset = 0
-
-        freq = (peak_idx + offset) * (SAMPLE_RATE / FFT_SIZE) 
-
-        # ─── E. Convert and Confirm ───
-        try:
-            midi_note = self.freq_to_midi(freq) 
-        except ValueError:
-            return 
-
-        if midi_note == self.candidate_midi: 
-            self.candidate_count += 1
-        else:
-            self.candidate_midi = midi_note
-            self.candidate_count = 1
-
-        # ─── F. Output the Array and Note Name ───
-        if self.candidate_count >= 2 and midi_note != self.last_midi: 
-            
-            piano_array = [0] * 88 
-            
-            if 21 <= midi_note <= 108: 
-                piano_array[midi_note - 21] = 1
-            
-            # Format the string to display the note name next to the array
-            note_name = self.midi_to_name(midi_note)
-            print(f"{note_name:<7} : {piano_array}", flush=True)
-            
-            self.last_midi = midi_note
+            self.keyboard = np.zeros(88)
+        
 
 #------Main Loop------
 if __name__ == "__main__":
     detector = PureArrayDetector()
     
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, 
-                        blocksize=HOP_SIZE, callback=detector.callback):
+                        blocksize=FFT_SIZE, callback=detector.callback):
         try:
             while True:
                 sd.sleep(1000)
