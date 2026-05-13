@@ -88,9 +88,9 @@ def generate_music(model, chord_to_id, chord_progression, max_notes = 600, tempe
             
 BPM = 80
 iiVI_cycle = [("Cm7", 4), ("F7", 4), ("Bbmaj7", 4), ("Bbmaj7", 4)]
+chord_to_id = mod.chord_to_id
 iiVI_long = iiVI_cycle * 5
-notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.75)
-print(len(notes))
+notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.95)
     
 
     

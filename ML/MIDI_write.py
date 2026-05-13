@@ -164,7 +164,9 @@ def write_midi(notes, progression, out_path,
         f.write(header + _make_track(tempo_evt) + _make_track(mel_evt) + _make_track(chord_evt))
 
 
-
-
-
-write_midi(gen.notes, gen.iiVI_long, "midi_gen2.mid", tempo_bpm=80)
+print("chords:")
+chord_progression = [(str(x),4) for x in input().split(",")]
+print(chord_progression)
+iiVI_long = chord_progression * 5
+notes = gen.generate_music(gen.LSTMmodel, gen.chord_to_id, iiVI_long, temperature=0.95)
+write_midi(notes, iiVI_long, "midi_gen5.mid", tempo_bpm=80)
