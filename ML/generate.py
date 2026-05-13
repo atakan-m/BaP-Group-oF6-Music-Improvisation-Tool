@@ -33,7 +33,7 @@ def midi_gen(pitch_class, prev_midi, default, pitch_high, pitch_low, max_step, r
     return int(possibilieties[int(rng.choice(3, p=weigths))])
 
 @torch.no_grad()
-def generate_music(model, chord_to_id, chord_progression, key, max_notes = 600, temperature = 1.0):
+def generate_music(model, chord_to_id, chord_progression, max_notes = 600, temperature = 1.0):
     default = 67
     max_step = 12
     prob = 0.05
@@ -89,7 +89,7 @@ def generate_music(model, chord_to_id, chord_progression, key, max_notes = 600, 
 BPM = 80
 iiVI_cycle = [("Cm7", 4), ("F7", 4), ("Bbmaj7", 4), ("Bbmaj7", 4)]
 iiVI_long = iiVI_cycle * 5
-notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.95, key= "Bb")
+notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.75)
 print(len(notes))
     
 
