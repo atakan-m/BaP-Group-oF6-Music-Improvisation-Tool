@@ -5,8 +5,8 @@ import numpy as np
 WIDTH = 36
 HEIGHT = 20
 fps = 60 #bpm
-bpm = 60
-Testing_variable_for_testing = (fps*fps/bpm/4)
+bpm = 129
+Testing_variable_for_testing = (fps*fps//bpm//4)
 
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
@@ -64,32 +64,30 @@ sheet = [[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
          ]
 
 
-
-class Figure:
-
-    figures = [
+figures = [
         1,2,3,4,5,6,7,8,9,10,11,12,
          13,14,15,16,17,18,19,20,21,22,23,24,
          25,26,27,28,29,30,31,32,33,34,35,36
         ]
-    Note_list = [
+Note_list = [
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     ]
+
+class Figure:
 
     def __init__(self, Notes):
         self.x = 0 #note
         self.y = 0
         self.tune = Notes #Name of note
 
-
     def image(self):
-        return [self.figures[i] if self.tune[i] != 0 else '' for i in range(len(self.tune))]
+        return [figures[i] if self.tune[i] != 0 else '' for i in range(len(self.tune))]
     
     def direction(self):
         #print([self.Note_list[i] for i in range(len(self.direc)) if self.direc[i] == 1])
-        return [self.Note_list[i] if self.tune[i] != 0 else '' for i in range(len(self.tune))]
+        return [Note_list[i] if self.tune[i] != 0 else '' for i in range(len(self.tune))]
 
 
 class Music:
@@ -165,12 +163,9 @@ while not done:
     if counter % (Testing_variable_for_testing*Testing_variable_for_testing) == 0:
         game.new_beatbar()
             
-    
     if counter % (1) == 0 or pressing_down:
         game.go_down()
-        print(counter)
             
-
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             done = True
@@ -206,8 +201,6 @@ while not done:
                     game.score -= 1
                     game.fuck = True
             
-
-
     screen.fill(WHITE)
 
     for i in range(game.height):
@@ -239,19 +232,19 @@ while not done:
                         game.y + game.zoom * (game.figure[k].y - 1) + 1,                                     #y value of rectangle
                         1.7* game.zoom * key_width[p] - 3, #Width of rectangle
                         max(game.zoom, game.zoom - 3 * game.figure[k].tune[p]) - 3]) #Height of rectangle
-                    screen.blit(font.render(game.figure[k].direction()[p], True, WHITE), [game.x + game.zoom * hor_pos[p] * 36/21 + 2 + (game.zoom *0.5), 
-                        game.y + game.zoom * (game.figure[k].y - 1)])
+                    #screen.blit(font.render(game.figure[k].direction()[p], True, WHITE), [game.x + game.zoom * hor_pos[p] * 36/21 + 2 + (game.zoom *0.5), 
+                    #    game.y + game.zoom * (game.figure[k].y - 1)])
     if game.beat_bars is not None:
         for k in range(len(game.beat_bars)):
             pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * game.beat_bars[k] - 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * game.beat_bars[k] - 20] )
 
-
     text = font1.render("Score: " + str(game.score), True, BLACK)
     text1 = font1.render("BPM: " + str(bpm), True, BLACK)
-
+    text2 = font1.render("FPS: " + str(fps), True, BLACK)
 
     screen.blit(text, [0, 0])
     screen.blit(text1, [game.zoom * 20 ,0])
+    screen.blit(text2, [game.zoom * 40 ,0])
     #text_game_over1 = font1.render("Press ESC", True, (255, 215, 0))
 
     pygame.display.flip()
