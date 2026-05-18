@@ -44,8 +44,9 @@ def main():
     pygame.init()
     current_chord = [0, 0]
     chord_prog = []
-    size = (1100, 600) # width, height
-    screen = pygame.display.set_mode(size)
+    size = (1920, 1080) # width, height
+    flags = pygame.FULLSCREEN
+    screen = pygame.display.set_mode(size, flags, vsync=1)
     pygame.display.set_caption("Input")
     WHITE = (255, 255, 255)
     BLACK = (0,0,0)

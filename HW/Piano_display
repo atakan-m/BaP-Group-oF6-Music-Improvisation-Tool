@@ -5,11 +5,36 @@ import numpy as np
 WIDTH = 36
 HEIGHT = 20
 fps = 60 #bpm
-bpm = 20
+bpm = 120
 Testing_variable_for_testing = (fps*fps//bpm//4)
 
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
+buffer_sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         ]
 
 sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -42,6 +67,8 @@ sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0
          
         ]
 
+total_sheet = buffer_sheet + sheet
+
 
 figures = [
         1,2,3,4,5,6,7,8,9,10,11,12,
@@ -72,9 +99,9 @@ class Figure:
 class Music:
     def __init__(self, height, width):
         self.score = 0
-        self.x = 100
-        self.y = 60
-        self.zoom = 20
+        self.x = 60
+        self.y = 80
+        self.zoom = 50
         self.figure = []
         self.fuck = False
         self.beat_bars = [0]   
@@ -87,7 +114,7 @@ class Music:
     def new_beatbar(self):
         self.beat_bars.append(0)
 
-        if len(self.beat_bars) > 5:
+        if len(self.beat_bars) > 2:
             self.beat_bars.pop(0)
         
     def go_down(self):
@@ -107,8 +134,9 @@ WHITE = (255, 255, 255)
 GRAY = (128, 128, 128)
 RED = (255, 0, 0)
 
-size = (1100, 600) # width, height
-screen = pygame.display.set_mode(size)
+size = (1920, 1080) # width, height
+flags = pygame.FULLSCREEN
+screen = pygame.display.set_mode(size, flags, vsync=1)
 
 pygame.display.set_caption("Jazz")
 
@@ -128,10 +156,10 @@ while not done:
         counter = 0
 
     if counter % (Testing_variable_for_testing) == 0 or pressing_down:
-        if tally < len(sheet):
-            game.new_figure(sheet[tally])
+        if tally < len(total_sheet):
+            game.new_figure(total_sheet[tally])
             tally += 1
-        if len(game.figure) != 0 and game.figure[0].y > 20:
+        if len(game.figure) != 0 and game.figure[0].y > 15:
             game.figure.pop(0)
         #if not game.fuck and (game.score - 1) >= 0:
             game.score -= 1
@@ -147,8 +175,10 @@ while not done:
         if event.type == pygame.QUIT:
             done = True
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
+            if event.key == pygame.K_r:
                 game.__init__(HEIGHT, WIDTH)
+            if event.key == pygame.K_ESCAPE:
+                done = True
             if event.key == pygame.K_LEFT:
                 if game.figure[0].y > 15 and game.figure[0].x == 0:
                     game.score += 1
@@ -197,8 +227,8 @@ while not done:
     pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * 20] )
     pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* WIDTH, game.y + game.zoom * 15] )
 
-    font = pygame.font.SysFont('Calibri', 10, True, False)
-    font1 = pygame.font.SysFont('Calibri', 65, True, False)
+    font = pygame.font.SysFont('Calibri', 100, True, False)
+    font1 = pygame.font.SysFont('Calibri', 50, True, False)
 
     if game.figure is not None:
         for k in range(len(game.figure)):              
@@ -221,8 +251,8 @@ while not done:
     text2 = font1.render("FPS: " + str(fps), True, BLACK)
 
     screen.blit(text, [0, 0])
-    screen.blit(text1, [game.zoom * 20 ,0])
-    screen.blit(text2, [game.zoom * 40 ,0])
+    screen.blit(text1, [game.zoom * 15 ,0])
+    screen.blit(text2, [game.zoom * 30 ,0])
     #text_game_over1 = font1.render("Press ESC", True, (255, 215, 0))
 
     pygame.display.flip()
