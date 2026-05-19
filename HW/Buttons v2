@@ -73,11 +73,10 @@ def main():
         text = font.render("current chord:" + str(chord_dict[current_chord[0]]) + str(mod_dict[current_chord[1]]),True, BLACK)
         text1 = font.render("current chord progression:" +  str(chord_prog),True, BLACK)
 
-        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 done = True
-            if event.type == pygame.KEYDOWN:
+            if event.type == pygame.KEYDOWN:    #so there might be a library that turns gpio inputs into keyboard inputs, which would mean that this could stay as-is :D
                 match event.key:
                     case pygame.K_w:
                         current_chord[0] += 1

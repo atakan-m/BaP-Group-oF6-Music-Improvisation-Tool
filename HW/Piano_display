@@ -26,26 +26,18 @@ buffer_sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          ]
 
 sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -69,6 +61,7 @@ sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0
 
 total_sheet = buffer_sheet + sheet
 
+inputty = {18}
 
 figures = [
         1,2,3,4,5,6,7,8,9,10,11,12,
@@ -80,6 +73,19 @@ Note_list = [
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     ]
+x = 0 
+def check_note(game, inputty, x):
+    setty = set()
+    if len(game.figure) != 0:
+        for i in game.figure[0].image():
+            if i:
+                setty.add(i)
+            if game.figure[0].y > 15 and inputty.issubset(setty):
+                game.figure.pop(0)
+                return True
+            #if game.figure[0].y > 15:
+
+    return None
 
 class Figure:
 
@@ -114,7 +120,7 @@ class Music:
     def new_beatbar(self):
         self.beat_bars.append(0)
 
-        if len(self.beat_bars) > 2:
+        if len(self.beat_bars) > 3:
             self.beat_bars.pop(0)
         
     def go_down(self):
@@ -159,10 +165,13 @@ while not done:
         if tally < len(total_sheet):
             game.new_figure(total_sheet[tally])
             tally += 1
-        if len(game.figure) != 0 and game.figure[0].y > 15:
+        if len(game.figure) != 0 and game.figure[0].y > 19:
             game.figure.pop(0)
+        if len(game.figure) != 0 and not any(game.figure[0].image()):
+            game.figure.pop(0)
+        
         #if not game.fuck and (game.score - 1) >= 0:
-            game.score -= 1
+            #game.score -= 1
         game.fuck = False
     
     if counter % (Testing_variable_for_testing*Testing_variable_for_testing) == 0:
@@ -170,6 +179,10 @@ while not done:
             
     if counter % (1) == 0 or pressing_down:
         game.go_down()
+        if check_note(game, inputty, game.score) and inputty and counter > 16 :
+            game.score += 1
+        #else:
+            #game.score -= 1
             
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -181,27 +194,6 @@ while not done:
                 done = True
             if event.key == pygame.K_LEFT:
                 if game.figure[0].y > 15 and game.figure[0].x == 0:
-                    game.score += 1
-                    game.figure.pop(0)
-                elif game.score - 1 > 0:
-                    game.score -= 1
-                    game.fuck = True
-            if event.key == pygame.K_UP:
-                if game.figure[0].y > 15 and game.figure[0].x == 1:
-                    game.score += 1
-                    game.figure.pop(0)
-                elif game.score - 1 > 0:
-                    game.score -= 1
-                    game.fuck = True
-            if event.key == pygame.K_DOWN:
-                if game.figure[0].y > 15 and game.figure[0].x == 2:
-                    game.score += 1
-                    game.figure.pop(0)
-                elif game.score - 1 > 0:
-                    game.score -= 1
-                    game.fuck = True
-            if event.key == pygame.K_RIGHT:
-                if game.figure[0].y > 15 and game.figure[0].x == 3:
                     game.score += 1
                     game.figure.pop(0)
                 elif game.score - 1 > 0:
