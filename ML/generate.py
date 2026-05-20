@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pandas as pd
-import  model as mod
+import  ML.model as mod
 
 
 LSTMmodel = mod.model
@@ -90,7 +90,7 @@ BPM = 80
 iiVI_cycle = [("Cm7", 4), ("F7", 4), ("Bbmaj7", 4), ("Bbmaj7", 4)]
 chord_to_id = mod.chord_to_id
 iiVI_long = iiVI_cycle * 5
-notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.95)
+# notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.95)
     
 
     
