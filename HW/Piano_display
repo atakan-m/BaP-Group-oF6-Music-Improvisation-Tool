@@ -2,8 +2,8 @@ import pygame
 import random
 import numpy as np
 import sys
-sys.path.insert(1, 'C://BAP//BaP-Group-oF6-Music-Improvisation-Tool//ML')
-import generate
+# sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//ML')
+# import generate
 
 
 WIDTH = 36
@@ -28,7 +28,7 @@ key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1
 #          [0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
 #          ]
 col_start = 48
-notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, generate.iiVI_long, temperature=0.95)
+# notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, generate.iiVI_long, temperature=0.95)
 def note_to_col(note):
     col = note - col_start
     return col
