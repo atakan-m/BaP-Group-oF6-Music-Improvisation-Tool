@@ -1,7 +1,8 @@
+
 import pygame
 import random
 import numpy as np
-import sys
+# import sys
 # sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//ML')
 # import generate
 
@@ -42,11 +43,6 @@ def notes_in_row(notes, num_cols= 36):
 def make_sheet(notes, num_cols=36 ):
     sheet = [notes_in_row(note, num_cols)for note in notes]
     return sheet
-
-
-# sheet = make_sheet(notes,36)
-
-
 
 class Figure:
 
@@ -103,7 +99,7 @@ class Music:
                 self.note += 1
             #self.delay -= 1
                 
-            if self.figure[0].y > 19 + display_start.game.figure[0].length:
+            if self.figure[0].y > 19 + self.figure[0].length:             #test was game
                 self.figure.pop(0)
                 if not self.fuck and (self.score - 1) >= 0:
                     self.score -= 1
@@ -123,9 +119,6 @@ class Music:
             self.figure[k].y += (1/16)
         for h in range(len(self.beat_bars)):
             self.beat_bars[h] += (1/16)
-            
-            
-
 
 def display_start(sheet):
 
@@ -264,3 +257,4 @@ def display_start(sheet):
         clock.tick(bpm)
 
     pygame.quit()
+    return None
