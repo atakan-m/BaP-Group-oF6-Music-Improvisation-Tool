@@ -3,13 +3,22 @@ import random
 import numpy as np
 import generate
 import sys 
+import torch
+import json
+import bapv1
+import Buttons_v2
+import sounddevice as sd
+
 sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//ML')
 
+SAMPLE_RATE = 44100
+FFT_SIZE = 2048
 WIDTH = 36
 HEIGHT = 20
 fps = 60 #bpm
 bpm = 120
 Testing_variable_for_testing = (fps*fps//bpm//4)
+detector = bapv1.PureArrayDetector()
 
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
@@ -83,8 +92,9 @@ sheet = make_sheet(notes,36)
 
 
 total_sheet = buffer_sheet + sheet
-
-inputty = {18}
+inputty = set()
+if len(bapv1.PureArrayDetector().melody) > 0:
+    inputty = {bapv1.PureArrayDetector().melody[0]}
 
 figures = [
         1,2,3,4,5,6,7,8,9,10,11,12,
@@ -178,6 +188,14 @@ counter = 0
 tally = 0
 
 pressing_down = False
+sd.InputStream(samplerate=SAMPLE_RATE, channels=1, 
+                blocksize=FFT_SIZE, callback=detector.callback).start()
+
+chord_prog_2 = []
+for chord in Buttons_v2.main():
+    chord_prog_2.append((chord,4))
+notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_prog_2*4, temperature=0.8)
+
 
 while not done:
     counter += 1
@@ -200,12 +218,12 @@ while not done:
     if counter % (Testing_variable_for_testing*Testing_variable_for_testing) == 0:
         game.new_beatbar()
             
-    if counter % (1) == 0 or pressing_down:
-        game.go_down()
-        if check_note(game, inputty, game.score) and inputty and counter > 16 :
-            game.score += 1
-        #else:
-            #game.score -= 1
+
+    game.go_down()
+    if check_note(game, inputty, game.score) and inputty and counter > 16 :
+        game.score += 1
+    #else:
+        #game.score -= 1
             
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -272,5 +290,6 @@ while not done:
 
     pygame.display.flip()
     clock.tick(fps)
+
 
 pygame.quit()
