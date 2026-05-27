@@ -18,15 +18,16 @@ FFT_SIZE = 2048
 WIDTH = 36
 HEIGHT = 20
 fps = 60 #bpm
-bpm = 120
+bpm = 60
 Testing_variable_for_testing = (fps*fps//bpm//4)
+speed = 1/Testing_variable_for_testing
 detector = bapv1.PureArrayDetector()
 
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
 buffer_sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -113,9 +114,9 @@ class Figure:
 class Music:
     def __init__(self, height, width):
         self.score = 0
-        self.x = 60
-        self.y = 80
-        self.zoom = 50
+        self.x = 40
+        self.y = 0
+        self.zoom = 33.333333
         self.figure = deque()
         self.fuck = False
         self.beat_bars = [0]   
@@ -133,9 +134,9 @@ class Music:
         
     def go_down(self):
         for k in range(len(self.figure)):
-            self.figure[k].y += (1/Testing_variable_for_testing)
+            self.figure[k].y += speed
         for h in range(len(self.beat_bars)):
-            self.beat_bars[h] += (1/Testing_variable_for_testing)
+            self.beat_bars[h] += speed
             
             
 #get the chords and generate notes
@@ -147,7 +148,7 @@ notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_
 sheet = make_sheet(notes,36)
 total_sheet = buffer_sheet + sheet
 
-real_pos = [60 + 50 * hor_pos[p] * 36/21 + 2 for p in range(36)]
+real_pos = [40 + 33.333 * hor_pos[p] * 36/21 + 2 for p in range(36)]
 
 # Initialize the game engine
 pygame.init()
@@ -159,7 +160,7 @@ WHITE = (255, 255, 255)
 GRAY = (128, 128, 128)
 RED = (255, 0, 0)
 
-size = (1920, 1080) # width, height
+size = (1280, 720) # width, height
 flags = pygame.FULLSCREEN
 screen = pygame.display.set_mode(size, flags, vsync=1)
 font = pygame.font.SysFont('Calibri', 40, True, False)
@@ -174,6 +175,27 @@ game = Music(HEIGHT, WIDTH) #height, width
 counter = 0
 tally = 0
 pressing_down = False
+
+background = pygame.Surface(size)
+background.fill(WHITE)
+
+for i in range(game.height):
+    for j in range(21 + 1):
+        pygame.draw.rect(background, GRAY, [game.x + game.zoom * j * 36/21, game.y + game.zoom * i, 1, game.zoom], 1)
+    for j in range(3):
+        pygame.draw.rect(background, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 1.4, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(background, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 3.25, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(background, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 6.55, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(background, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 8.33, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    for j in range(3):
+        pygame.draw.rect(background, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 10.11, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
+    pygame.draw.line(background, GRAY, [game.x + game.zoom * 0, game.y + game.zoom* 0], [game.x + game.zoom* WIDTH, game.y + game.zoom * 0] )
+    pygame.draw.line(background, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * 20] )
+    pygame.draw.line(background, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* WIDTH, game.y + game.zoom * 15] )
+
 sd.InputStream(samplerate=SAMPLE_RATE, channels=1, 
                 blocksize=FFT_SIZE, callback=detector.callback).start()
 
@@ -221,28 +243,9 @@ while not done:
                 elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
-                          
-    screen.fill(WHITE)
 
-    for i in range(game.height):
-        for j in range(21 + 1):
-            pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 36/21, game.y + game.zoom * i, 1, game.zoom], 1)
-    for j in range(3):
-        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 1.4, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
-    for j in range(3):
-        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 3.25, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
-    for j in range(3):
-        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 6.55, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
-    for j in range(3):
-        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 8.33, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
-    for j in range(3):
-        pygame.draw.rect(screen, GRAY, [game.x + game.zoom * j * 12 + game.zoom * 10.11, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.5, game.zoom* 3], 1)
-    pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom* 0], [game.x + game.zoom* WIDTH, game.y + game.zoom * 0] )
-    pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * 20] )
-    pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* WIDTH, game.y + game.zoom * 15] )
-
+    screen.blit(background, (0,0))
     
-
     if game.figure is not None:
         for k in range(len(game.figure)):
             figure = game.figure[k]
@@ -252,7 +255,7 @@ while not done:
                 if game.figure[k].image[p]:
                     pygame.draw.rect(screen, (0, 100 * key_width[p], 0), #screen and color
                         [real_pos[p] + game.zoom * (0.5/key_width[p] - 0.5), #x value of rectangle
-                        game.y + game.zoom * (game.figure[k].y - 1) + 1,                                     #y value of rectangle
+                        game.y + game.zoom * (game.figure[k].y - 1) + 1, #y value of rectangle
                         1.7* game.zoom * key_width[p] - 3, #Width of rectangle
                         max(game.zoom, game.zoom - 3 * game.figure[k].tune[p]) - 3]) #Height of rectangle
                 if game.figure[k-1].noteName[p] != game.figure[k].noteName[p]:
