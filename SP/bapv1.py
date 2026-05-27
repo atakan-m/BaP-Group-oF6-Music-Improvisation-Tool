@@ -25,11 +25,8 @@ class PureArrayDetector:
     def __init__(self):
         self.audio_buffer = np.zeros(FFT_SIZE, dtype=np.float32) 
         self.last_midi = None 
-        # self.candidate_midi = None 
-        # self.candidate_count = 0 
         self.prev_energy = 0.0
-        # self.onset = False
-        self.melody = np.full(10, "", dtype='<U7')
+        self.melody = np.full(16, "", dtype='<U7')
         self.last_note = None
         self.keyboard = np.zeros(88)
         self.spectral_flux = np.zeros(50)
@@ -45,15 +42,12 @@ class PureArrayDetector:
         """Converts a standard MIDI note number into its musical string representation."""
         return f"{NOTE_NAMES[midi_note % 12]}{(midi_note // 12) - 1}"
     
-    def spec_diff_H(self, data):
-        return (data + np.abs(data)) / 2
-    
-    def pos_only(self, data):
+    def rectify(self, data):
         return (data + np.abs(data)) / 2
 
-    def compute_flux_pos(self, magnitude):
+    def compute_flux(self, magnitude):
         diffs = magnitude[1:] - magnitude[:-1]
-        return np.sum(self.pos_only(diffs))
+        return np.sum(self.rectify(diffs))
     
     def note_equal(self, note1, note2):
         # Check#1 is if has the same note name
@@ -67,9 +61,12 @@ class PureArrayDetector:
 
     def callback(self, indata, frames, time_info, status):
         
+        #Transform the data into mono
+        data = np.mean(indata, axis=0)
+        
         # Noise Cancel and Update the Audio Buffer
-        self.audio_buffer = np.roll(self.audio_buffer, -HOP_SIZE) 
-        self.audio_buffer[-HOP_SIZE:] = np.convolve(indata[:, 0], bandpass, "same")    
+        self.audio_buffer = np.roll(self.audio_buffer, -HOP_SIZE)
+        self.audio_buffer[-HOP_SIZE:] = np.convolve(data, bandpass, "same")    
         
         # Check for onset (change to spectral flux later)
         energy = np.sum(self.audio_buffer ** 2)
@@ -80,16 +77,13 @@ class PureArrayDetector:
             if self.last_note is not None: 
                 self.last_note = None 
             return
-        
-        # onset = energy > self.prev_energy * 1.5 #onset if energy is jumped by 50%
-        
 
         #Apply Hann to reduce edge artifacts
         spectrum = np.abs(np.fft.rfft(self.audio_buffer * WINDOW))[mask]
         
         #Find Onset
-        self.spectral_flux= np.roll(self.spectral_flux, -1)
-        self.spectral_flux[-1] = self.compute_flux_pos(spectrum) / 700000
+        self.spectral_flux = np.roll(self.spectral_flux, -1)
+        self.spectral_flux[-1] = self.compute_flux(spectrum)
         
         onset_thresh = self.spectral_flux[-2] * 2
         onset = self.spectral_flux[-1] > onset_thresh
