@@ -1,15 +1,16 @@
 import pygame
 import random
 import numpy as np
-import generate
 import sys 
+sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//ML')
+sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//SP')
+sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//HW//bap')
+import generate
 import torch
 import json
 import bapv1
 import Buttons_v2
 import sounddevice as sd
-
-sys.path.insert(1, '..//BaP-Group-oF6-Music-Improvisation-Tool//ML')
 
 SAMPLE_RATE = 44100
 FFT_SIZE = 2048
@@ -40,39 +41,11 @@ buffer_sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
          ]
 
-sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         
+sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         ]
 
 col_start = 48
-notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, generate.iiVI_long, temperature=0.95)
+#notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, generate.iiVI_long, temperature=0.95)
 def note_to_col(note):
     col = note - col_start
     return col
@@ -88,10 +61,6 @@ def make_sheet(notes, num_cols=36 ):
     return sheet
 
 
-sheet = make_sheet(notes,36)
-
-
-total_sheet = buffer_sheet + sheet
 inputty = set()
 if len(bapv1.PureArrayDetector().melody) > 0:
     inputty = {bapv1.PureArrayDetector().melody[0]}
@@ -163,6 +132,15 @@ class Music:
             self.beat_bars[h] += (1/Testing_variable_for_testing)
             
             
+#get the chords and generate notes
+chord_prog_2 = []
+for chord in Buttons_v2.main():
+    chord_prog_2.append((chord,4))
+notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_prog_2*4, temperature=0.8)
+
+sheet = make_sheet(notes,36)
+total_sheet = buffer_sheet + sheet
+
 # Initialize the game engine
 pygame.init()
 print(" starting ")
@@ -186,16 +164,9 @@ clock = pygame.time.Clock()
 game = Music(HEIGHT, WIDTH) #height, width
 counter = 0
 tally = 0
-
 pressing_down = False
 sd.InputStream(samplerate=SAMPLE_RATE, channels=1, 
                 blocksize=FFT_SIZE, callback=detector.callback).start()
-
-chord_prog_2 = []
-for chord in Buttons_v2.main():
-    chord_prog_2.append((chord,4))
-notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_prog_2*4, temperature=0.8)
-
 
 while not done:
     counter += 1
@@ -240,7 +211,7 @@ while not done:
                 elif game.score - 1 > 0:
                     game.score -= 1
                     game.fuck = True
-            
+                          
     screen.fill(WHITE)
 
     for i in range(game.height):
@@ -260,7 +231,7 @@ while not done:
     pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom* WIDTH, game.y + game.zoom * 20] )
     pygame.draw.line(screen, RED, [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom* WIDTH, game.y + game.zoom * 15] )
 
-    font = pygame.font.SysFont('Calibri', 100, True, False)
+    font = pygame.font.SysFont('Calibri', 40, True, False)
     font1 = pygame.font.SysFont('Calibri', 50, True, False)
 
     if game.figure is not None:
@@ -281,12 +252,13 @@ while not done:
 
     text = font1.render("Score: " + str(game.score), True, BLACK)
     text1 = font1.render("BPM: " + str(bpm), True, BLACK)
-    text2 = font1.render("FPS: " + str(fps), True, BLACK)
+    text2 = font1.render("Time: " + str(counter//fps), True, BLACK)
 
     screen.blit(text, [0, 0])
     screen.blit(text1, [game.zoom * 15 ,0])
     screen.blit(text2, [game.zoom * 30 ,0])
     #text_game_over1 = font1.render("Press ESC", True, (255, 215, 0))
+    
 
     pygame.display.flip()
     clock.tick(fps)

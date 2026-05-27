@@ -42,6 +42,7 @@ def main():
 
 
     pygame.init()
+    print("where is this?")
     current_chord = [0, 0]
     chord_prog = []
     size = (1920, 1080) # width, height
@@ -62,11 +63,12 @@ def main():
         if confirm == True:
             chord_prog.append(current_chord)
             if done == True:
+                pygame.quit()
                 return chord_prog
     else:
         current_chord = [0, 0]
         chord_prog = []  
-    
+    print("who is this?")
     while not done:
         screen.fill(WHITE)
         
@@ -99,7 +101,10 @@ def main():
                     case pygame.K_c:
                         chord_prog.append(chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
                         current_chord = [0,0]
+                    case pygame.K_p:
+                        chord_prog = ["Am7","Bm7","E9","E9"]
                     case pygame.K_d:
+                        pygame.quit()
                         return chord_prog
                     case pygame.K_q:
                         done = True
@@ -109,12 +114,14 @@ def main():
         #print("current chord progression:", chord_prog)
         text = font.render("current chord:" + str(chord_dict[current_chord[0]]) + str(mod_dict[current_chord[1]]),True, BLACK)
         text1 = font1.render("current chord progression:" +  str(chord_prog),True, BLACK)
-        screen.blit(text, [20, 0])
-        screen.blit(text1, [20, 100])
+        text2 = font1.render("Use w/s or arrow_up/arrow_down to change chord, press c to add to list and d to confirm", True, BLACK)
+        text3 = font1.render("Recommended: [Am7, Bm7, E9, E9], press p to auto-input", True, BLACK)
+        screen.blit(text, [200, 200])
+        screen.blit(text1, [200, 400])
+        screen.blit(text2, [200, 600])
+        screen.blit(text3, [800, 200])
         pygame.display.flip()
         clock.tick(fps)
 
-        
-    
-pygame.quit()
-print(main())
+if __name__ == "__main__":
+    main()
