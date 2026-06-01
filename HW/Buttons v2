@@ -1,4 +1,5 @@
 import sys
+import pygame
 
 def main():
 
@@ -40,8 +41,22 @@ def main():
     mod_down = False
 
 
+    pygame.init()
     current_chord = [0, 0]
     chord_prog = []
+    size = (1920, 1080) # width, height
+    flags = pygame.FULLSCREEN
+    screen = pygame.display.set_mode(size, flags, vsync=1)
+    pygame.display.set_caption("Input")
+    WHITE = (255, 255, 255)
+    BLACK = (0,0,0)
+    fps = 60
+    clock = pygame.time.Clock()
+    font = pygame.font.SysFont('Calibri', 50, True, False)
+    font1 = pygame.font.SysFont('Calibri', 20, True, False)
+
+    
+    
 
     if reset == False:
         if confirm == True:
@@ -51,40 +66,55 @@ def main():
     else:
         current_chord = [0, 0]
         chord_prog = []  
-
-    while True:
-        x = input("Enter command: ")
-
-        match x:
-            case 'w':
-                current_chord[0] += 1
-                current_chord[0] = current_chord[0] % 12
-            case 's':
-                current_chord[0] -= 1
-                if current_chord[0] < 0:
-                    current_chord[0] += 12
-                else :
-                    current_chord[0] = current_chord[0] % 12
-            case '+':
-                current_chord[1] += 1
-                current_chord[1] = current_chord[1] % 15
-            case '-':
-                current_chord[1] -= 1
-                if current_chord[1] < 0:
-                    current_chord[1] += 15
-                else :
-                    current_chord[1] = current_chord[1] % 15
-            case 'c':
-                chord_prog.append(chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
-                current_chord = [0,0]
-            case 'd':
-                return chord_prog
-            case 'q':
-                return
-            case _:
-                print("Use w/s or +/- or c/d/q")
-        print("current chord:", chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
-        print("current chord progression:", chord_prog)
     
+    while not done:
+        screen.fill(WHITE)
+        
+        text = font.render("current chord:" + str(chord_dict[current_chord[0]]) + str(mod_dict[current_chord[1]]),True, BLACK)
+        text1 = font.render("current chord progression:" +  str(chord_prog),True, BLACK)
 
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                done = True
+            if event.type == pygame.KEYDOWN:    #so there might be a library that turns gpio inputs into keyboard inputs, which would mean that this could stay as-is :D
+                match event.key:
+                    case pygame.K_w:
+                        current_chord[0] += 1
+                        current_chord[0] = current_chord[0] % 12
+                    case pygame.K_s:
+                        current_chord[0] -= 1
+                        if current_chord[0] < 0:
+                            current_chord[0] += 12
+                        else :
+                            current_chord[0] = current_chord[0] % 12
+                    case pygame.K_UP:
+                        current_chord[1] += 1
+                        current_chord[1] = current_chord[1] % 15
+                    case pygame.K_DOWN:
+                        current_chord[1] -= 1
+                        if current_chord[1] < 0:
+                            current_chord[1] += 15
+                        else :
+                            current_chord[1] = current_chord[1] % 15
+                    case pygame.K_c:
+                        chord_prog.append(chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
+                        current_chord = [0,0]
+                    case pygame.K_d:
+                        return chord_prog
+                    case pygame.K_q:
+                        done = True
+                    case _:
+                        print("Use w/s or up/down or c/d/q")
+        #print("current chord:", chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
+        #print("current chord progression:", chord_prog)
+        text = font.render("current chord:" + str(chord_dict[current_chord[0]]) + str(mod_dict[current_chord[1]]),True, BLACK)
+        text1 = font1.render("current chord progression:" +  str(chord_prog),True, BLACK)
+        screen.blit(text, [20, 0])
+        screen.blit(text1, [20, 100])
+        pygame.display.flip()
+        clock.tick(fps)
+
+        
+    
+pygame.quit()
 print(main())

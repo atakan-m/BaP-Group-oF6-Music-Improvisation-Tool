@@ -1,4 +1,5 @@
 import sys
+import pygame
 
 def main():
 
@@ -39,11 +40,23 @@ def main():
     mod_up = False
     mod_down = False
 
-
+    pygame.init()
     current_chord = [0, 0]
     chord_prog = []
+    size = (1100, 600) # width, height
+    screen = pygame.display.set_mode(size)
+    WHITE = (255, 255, 255)
+    done = False
+    fps = 60
+    clock = pygame.time.Clock()
+    screen.fill(WHITE)
 
-    while True:
+    
+    while not done:
+        
+        
+
+        pygame.display.set_caption("Jazz")
         x = input("Enter command: ")
 
         match x:
@@ -71,11 +84,14 @@ def main():
             case 'd':
                 return chord_prog
             case 'q':
-                return
+                done = True
             case _:
                 print("Use w/s or +/- or c/d/q")
         print("current chord:", chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
         print("current chord progression:", chord_prog)
 
+        pygame.display.flip()
+        clock.tick(fps)
 
+pygame.quit()
 print(main())
