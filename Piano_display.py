@@ -25,26 +25,46 @@ detector = bapv1.PureArrayDetector()
 
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
-buffer_sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-         ]
+buffer_sheet = [[],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],]
+                
 
-sheet = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        ]
+sheet = [[0,0]]
+testing_sheet = [[1,4],
+                 [2,4],
+                 [3,4],
+                 [4,4],
+                 [5,4],
+                 [6,4],
+                 [7,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],
+                 [1,4],] #note, length
 
 col_start = 48
 #notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, generate.iiVI_long, temperature=0.95)
@@ -78,7 +98,7 @@ Note_list = [
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     ]
 x = 0 
-def check_note(game, inputty, x):
+'''def check_note(game, inputty, x):
     setty = set()
     if len(game.figure) != 0:
         for i in game.figure[0].image:
@@ -89,18 +109,19 @@ def check_note(game, inputty, x):
                 return True
             #if game.figure[0].y > 15:
 
-    return None
+    return None'''
 
 class Figure:
 
-    def __init__(self, Notes):
+    def __init__(self, Note):
         self.x = 0 #note
         self.y = 0
-        self.tune = Notes #Name of note
+        self.tune = Note #Name of note
+        self._len = figures[Note[1]]
 
-        self._image = [figures[i] if Notes[i] != 0 else '' for i in range(len(Notes))]
+        self._image = figures[Note[0]]
 
-        self._note_names = [Note_list[i] if Notes[i] != 0 else '' for i in range(len(Notes))]
+        self._note_names = Note_list[Note[0]]
 
     @property
     def image(self):
@@ -109,13 +130,17 @@ class Figure:
     @property
     def noteName(self):
         return self._note_names
-
+    
+    @property
+    def length(self):
+        return self._len
+len_var = 0
 
 class Music:
     def __init__(self, height, width):
         self.score = 0
         self.x = 40
-        self.y = 0
+        self.y = 40
         self.zoom = 33.333333
         self.figure = deque()
         self.fuck = False
@@ -125,6 +150,7 @@ class Music:
 
     def new_figure(self, bar):
             self.figure.append(Figure(bar))
+            
     
     def new_beatbar(self):
         self.beat_bars.append(0)
@@ -146,7 +172,7 @@ for chord in Buttons_v2.main():
 notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_prog_2*4, temperature=0.8)
 
 sheet = make_sheet(notes,36)
-total_sheet = buffer_sheet + sheet
+total_sheet = buffer_sheet + testing_sheet
 
 real_pos = [40 + 33.333 * hor_pos[p] * 36/21 + 2 for p in range(36)]
 
@@ -211,8 +237,6 @@ while not done:
             tally += 1
         if len(game.figure) != 0 and game.figure[0].y > 19:
             game.figure.popleft()
-        if len(game.figure) != 0 and not any(game.figure[0].image):
-            game.figure.popleft()
         
         #if not game.fuck and (game.score - 1) >= 0:
             #game.score -= 1
@@ -223,8 +247,8 @@ while not done:
             
 
     game.go_down()
-    if check_note(game, inputty, game.score) and inputty and counter > 16 :
-        game.score += 1
+    '''if check_note(game, inputty, game.score) and inputty and counter > 16 :
+        game.score += 1'''
     #else:
         #game.score -= 1
             
@@ -247,20 +271,17 @@ while not done:
     screen.blit(background, (0,0))
     
     if game.figure is not None:
-        for k in range(len(game.figure)):
-            figure = game.figure[k]
+        for figure in game.figure:
             if figure.y < -2 or figure.y > 21:
                 continue
-            for p in range(len(figure.image)):
-                if game.figure[k].image[p]:
-                    pygame.draw.rect(screen, (0, 100 * key_width[p], 0), #screen and color
-                        [real_pos[p] + game.zoom * (0.5/key_width[p] - 0.5), #x value of rectangle
-                        game.y + game.zoom * (game.figure[k].y - 1) + 1, #y value of rectangle
-                        1.7* game.zoom * key_width[p] - 3, #Width of rectangle
-                        max(game.zoom, game.zoom - 3 * game.figure[k].tune[p]) - 3]) #Height of rectangle
-                if game.figure[k-1].noteName[p] != game.figure[k].noteName[p]:
-                    screen.blit(font.render(game.figure[k].noteName[p], True, RED), [real_pos[p] + (game.zoom *0.5), 
-                        game.y + game.zoom * (game.figure[k].y - 1)])
+            if figure.length != 0:
+                pygame.draw.rect(screen, (0, 100 * key_width[figure.image], 0), #screen and color
+                    [real_pos[figure.image] + game.zoom * (0.5/key_width[figure.image] - 0.5), #x value of rectangle
+                    game.y + game.zoom * (figure.y - 1) + 1, #y value of rectangle
+                    1.7* game.zoom * key_width[figure.image] - 3, #Width of rectangle
+                    game.zoom * figure.length - 3]) #Height of rectangle
+                screen.blit(font.render(figure.noteName, True, RED), [real_pos[figure.image] + (game.zoom *0.5), 
+                    game.y + game.zoom * (figure.y - 1)])
     if game.beat_bars is not None:
         for k in range(len(game.beat_bars)):
             pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * game.beat_bars[k] - 3], [game.x + game.zoom* WIDTH, game.y + game.zoom * game.beat_bars[k] - 3] )
