@@ -1,0 +1,14 @@
+{
+  "n_solos": 417,
+  "n_ticks_total": 463808,
+  "n_chords": 300,
+  "pitch_low": 40,
+  "pitch_high": 96,
+  "ticks_per_beat": 4,
+  "ticks_per_bar": 16,
+  "token_vocab_size": 59,
+  "tok_rest": 0,
+  "tok_hold": 1,
+  "tok_note_base": 2,
+  "chord_min_count": 10
+}
