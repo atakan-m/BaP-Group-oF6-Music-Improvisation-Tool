@@ -169,25 +169,6 @@ CHORD_INTERVALS = {
     "sus2": [0, 2, 7],
 }
 
-<<<<<<< Updated upstream
-            notes.append((midi, beats, chord_id_pg))
-            elapsed_time += beats
-            prev_pitch_class = pitch_class
-            prev_dur = dur
-            prev_midi = midi
-    output = []
-    for midi , beats, chord_id_pg in notes:
-        output.append((int(midi), float(beats), chord_progression[chord_id_pg][0]))
-    return output
-            
-BPM = 80
-iiVI_cycle = [("Cm7", 4), ("F7", 4), ("Bbmaj7", 4), ("Bbmaj7", 4)]
-iiVI_long = iiVI_cycle * 5
-notes = generate_music(LSTMmodel, mod.chord_to_id, iiVI_long, temperature=0.75)
-print(len(notes))
-    
-=======
->>>>>>> Stashed changes
 
 def chord_to_voicing(chord_string, bass_min=36, upper_min=48):
     p = parse_chord(chord_string)
@@ -271,12 +252,210 @@ def write_midi(events, bar_chords, out_path, tempo_bpm=80,
                        + _make_track(chord_evt))
 
 
+# ======================================================================
+# Compatibility layer for Piano_display.py / other-group integration.
+#
+# Piano_display.py imports this module and calls:
+#     notes = generate.generate_music(
+#         generate.LSTMmodel,
+#         generate.chord_to_id,
+#         chord_progression,            # list of (chord_str, n_beats)
+#         temperature=0.8,
+#     )
+# It then iterates `notes` row-by-row, advancing the display by one 16th
+# note per row, using only `notes[i][0]` (the MIDI pitch).
+#
+# The display draws one note per row, has no rest concept, and clamps to
+# MIDI 49..84 (a 36-key window starting just above MIDI 48). Rests and
+# holds from the model are therefore rendered as "previous pitch held".
+# ======================================================================
+
+_HERE        = os.path.dirname(os.path.abspath(__file__))
+_CKPT_PATH   = os.path.join(_HERE, "checkpoints", "jazz_lstm.pt")
+_VOCAB_PATH  = os.path.join(_HERE, "data", "processed", "chord_vocab.json")
+
+# These names are accessed as module attributes by Piano_display.py.
+# They are populated by _ensure_loaded() on first use.
+LSTMmodel   = None
+chord_to_id = None
+_qual_to_id = None
+
+# Display pitch window (Piano_display only renders MIDI 49..84 safely)
+DISPLAY_MIDI_MIN = 49
+DISPLAY_MIDI_MAX = 84
+DISPLAY_DEFAULT_PITCH = 60   # fallback if the very first tick is REST/HOLD
+
+
+def _ensure_loaded():
+    """Lazy-load the checkpoint + chord vocab. Idempotent."""
+    global LSTMmodel, chord_to_id, _qual_to_id
+    if LSTMmodel is not None:
+        return
+    ckpt = torch.load(_CKPT_PATH, map_location="cpu", weights_only=True)
+    m = JazzLSTM(
+        vocab_size=ckpt["vocab_size"],
+        n_qualities=ckpt["n_qualities"],
+        hidden=ckpt["hidden"],
+        n_layers=ckpt["n_layers"],
+        dropout=ckpt["dropout"],
+    )
+    m.load_state_dict(ckpt["model_state"])
+    m.eval()
+    with open(_VOCAB_PATH) as f:
+        chord_vocab = json.load(f)
+    LSTMmodel   = m
+    _qual_to_id = build_qual_map(chord_vocab)
+    # `chord_to_id` is passed back to us by Piano_display and ignored
+    # internally; we expose a chord-string -> int dict for completeness.
+    chord_to_id = {c: i for i, c in enumerate(chord_vocab)}
+
+
+def generate_music(model, chord_to_id_unused, chord_progression,
+                   temperature=1.0, seed=None):
+    """Compatibility entry point used by Piano_display.py.
+
+    Args:
+        model:             ignored (kept for old API compat — we use the
+                           module-level LSTMmodel loaded by _ensure_loaded)
+        chord_to_id_unused: ignored (same reason)
+        chord_progression:  list of (chord_str, n_beats) tuples
+        temperature:        sampling temperature
+        seed:               RNG seed; None => a random seed each call so
+                            repeated runs over the same progression sound
+                            different
+
+    Returns:
+        list of (midi_pitch, duration_beats, chord_label_str) tuples,
+        one entry per 16th-note tick. MIDI pitch is clamped to the
+        display range [DISPLAY_MIDI_MIN, DISPLAY_MIDI_MAX]. REST/HOLD
+        ticks reuse the previously sounding pitch (visual continuation),
+        because Piano_display has no rest representation.
+    """
+    _ensure_loaded()
+    if seed is None:
+        seed = int(np.random.SeedSequence().entropy & 0xFFFFFFFF)
+
+    # Build per-tick chord features. Each chord lasts n_beats * 4 ticks.
+    chord_root_list, chord_qual_list, chord_label_list = [], [], []
+    for chord_str, n_beats in chord_progression:
+        r, q = chord_to_root_qual(chord_str, _qual_to_id)
+        n_ticks = max(1, int(round(float(n_beats) * TICKS_PER_BEAT)))
+        chord_root_list.extend([r] * n_ticks)
+        chord_qual_list.extend([q] * n_ticks)
+        chord_label_list.extend([chord_str] * n_ticks)
+
+    if not chord_root_list:
+        return []
+
+    chord_root = np.asarray(chord_root_list, dtype=np.int64)
+    chord_qual = np.asarray(chord_qual_list, dtype=np.int64)
+
+    tokens, _ = generate_tokens(
+        LSTMmodel, chord_root, chord_qual,
+        temperature=temperature, seed=seed,
+    )
+
+    # Token -> per-tick (midi, beats, chord_label) for the display.
+    out = []
+    last_midi = DISPLAY_DEFAULT_PITCH
+    tick_beats = 1.0 / TICKS_PER_BEAT   # = 0.25 (a 16th in beats)
+    for i, tok in enumerate(tokens):
+        tok = int(tok)
+        if tok >= TOK_NOTE_BASE:
+            midi = PITCH_LOW + (tok - TOK_NOTE_BASE)
+            if midi < DISPLAY_MIDI_MIN:
+                midi = DISPLAY_MIDI_MIN
+            elif midi > DISPLAY_MIDI_MAX:
+                midi = DISPLAY_MIDI_MAX
+            last_midi = midi
+        else:
+            midi = last_midi
+        out.append((int(midi), tick_beats, chord_label_list[i]))
+    return out
+
+
+# ----------------------------------------------------------------------
+# Realtime engine convenience constructor
+# ----------------------------------------------------------------------
+def make_realtime_engine(chord_progression,
+                         total_bars=64,
+                         temperature=1.0,
+                         rollout_ticks=53,
+                         deviation_lock_ticks=4,
+                         seed=None):
+    """One-call constructor for the re-planning engine.
+
+    Use this from Piano_display.py (or any caller) when you want
+    per-16th-tick re-planning rather than a fixed up-front sheet.
+
+    Returns a JazzImprov object that has been built, given the
+    progression, and reset — i.e. ready for `commit()` calls.
+
+    Per-tick usage:
+        engine = generate.make_realtime_engine(
+            [(c, 1) for c in chord_strings],   # 1 bar per chord
+            total_bars=64,
+        )
+        rollout = engine.rollout()             # initial 10s for the display
+
+        # Each 16th tick:
+        played_token = sp_get_player_token()   # one of: REST=0, HOLD=1,
+                                               # or NOTE token from
+                                               # generate.pitch_to_note_token(midi)
+        rollout = engine.commit(played_token)  # new 10s rollout
+
+    The `deviation_lock_ticks` default of 4 means: when the player
+    plays a note different from the model's prediction, that note is
+    held for 4 ticks (one quarter note at 80 BPM) on the display, and
+    the model uses those 4 ticks to re-plan the rest of the rollout.
+    """
+    _ensure_loaded()
+    # Local import to avoid a circular module-load: realtime.py also
+    # imports from model.py, and we only need it for this entry point.
+    from realtime import JazzImprov
+    eng = JazzImprov(
+        _CKPT_PATH,
+        data_dir=os.path.join(_HERE, "data", "processed"),
+        temperature=temperature,
+        rollout_ticks=rollout_ticks,
+        deviation_lock_ticks=deviation_lock_ticks,
+        seed=seed if seed is not None else 0,
+    )
+    eng.set_progression(list(chord_progression), total_bars=total_bars)
+    eng.reset()
+    return eng
+
+
+def pitch_to_note_token(midi_pitch):
+    """Convenience: convert a MIDI pitch into a NOTE_x token for `commit()`.
+
+    Clipped to the model's vocab range [40, 96]. The SP layer should call
+    this when reporting a new attack."""
+    p = int(midi_pitch)
+    if p < PITCH_LOW:
+        p = PITCH_LOW
+    elif p > 96:
+        p = 96
+    return TOK_NOTE_BASE + (p - PITCH_LOW)
+
+
+# Try to load the model now so `generate.LSTMmodel` is immediately
+# available after `import generate`. Wrapped in try/except so a missing
+# checkpoint at import time doesn't break the CLI (`python ML/generate.py`),
+# which loads the model itself.
+try:
+    _ensure_loaded()
+except Exception as _e:
+    print(f"[generate.py] note: model not preloaded at import "
+          f"(will load on first call): {_e}")
+
+
 # ----------------------------------------------------------------------
 # Entry point
 # ----------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--checkpoint", default="ML/checkpoints/jazz_lstm.pt")
+    ap.add_argument("--checkpoint", default=_CKPT_PATH)
     ap.add_argument("--chords",     default="Dm7,G7,Cj7,Cj7",
                     help="comma-separated chord progression (in C-relative key)")
     ap.add_argument("--chord_bars", type=int, default=1, help="bars per chord")
@@ -288,7 +467,7 @@ def main():
     args = ap.parse_args()
 
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    with open("ML/data/processed/chord_vocab.json") as f:
+    with open(_VOCAB_PATH) as f:
         chord_vocab = json.load(f)
     qual_to_id = build_qual_map(chord_vocab)
 
@@ -342,3 +521,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

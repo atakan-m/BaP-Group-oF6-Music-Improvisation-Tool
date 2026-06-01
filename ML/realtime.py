@@ -129,7 +129,8 @@ class JazzImprov:
         checkpoint_path,
         data_dir="ML/data/processed",
         temperature=1.0,
-        rollout_ticks=53,           # ~10s at 80bpm, 16ths per beat
+        rollout_ticks=53,            # ~10s at 80bpm, 16ths per beat
+        deviation_lock_ticks=4,      # quarter-note lock after a deviation
         seed=0,
         device=None,
     ):
@@ -137,6 +138,7 @@ class JazzImprov:
         self.device = torch.device(device)
         self.temperature = float(temperature)
         self.rollout_ticks = int(rollout_ticks)
+        self.deviation_lock_ticks = int(deviation_lock_ticks)
         self._rng = np.random.default_rng(seed)
 
         # --- load model
@@ -171,6 +173,10 @@ class JazzImprov:
         self._h_rollout = None
         self._prev_rollout_tok = TOK_REST
         self._rollout_next_tick = 0
+        # When > 0, the next `_locked_ticks` commits are forced to behave as
+        # if the player is holding the deviation note (no new re-plan; the
+        # rollout is shifted/extended each tick). Set by a deviation commit.
+        self._locked_ticks = 0
 
     # ------------------------------------------------------------------
     # Setup
@@ -215,6 +221,7 @@ class JazzImprov:
         self._h_rollout = None
         self._prev_rollout_tok = TOK_REST
         self._rollout_next_tick = 0
+        self._locked_ticks = 0
         self._refresh_rollout()
 
     # ------------------------------------------------------------------
@@ -299,6 +306,44 @@ class JazzImprov:
         self.prev_actual = int(played_token)
         self.current_tick = t + 1
 
+    @torch.no_grad()
+    def _build_deviation_rollout(self, n_lock):
+        """Build a new rollout buffer that begins with `n_lock` HOLD tokens
+        (the visual continuation of the just-played deviation note) followed
+        by fresh predictions resumed from a state that has been simulated
+        forward through those HOLDs.
+
+        Called right after `_advance_persistent(played_token)` on a deviation,
+        so `current_tick` is one past the deviation tick and `prev_actual`
+        equals the deviation note. The persistent state is *not* modified
+        here — the simulated advance happens on a clone."""
+        # Simulate the next `n_lock` HOLD inputs in a clone so the rollout
+        # state ends up at "ready to predict (current_tick + n_lock)".
+        h_sim = self._clone_hidden(self.h_persistent)
+        prev = self.prev_actual
+        for k in range(n_lock):
+            t = self.current_tick + k
+            if t >= self.total_ticks:
+                n_lock = k
+                break
+            _logits, h_sim = self._forward_one(prev, t, h_sim)
+            prev = TOK_HOLD
+
+        new_buf = [TOK_HOLD] * n_lock
+        rollout_start = self.current_tick + n_lock
+        n_more = self.rollout_ticks - n_lock
+        end_tick = min(rollout_start + n_more, self.total_ticks)
+        for t in range(rollout_start, end_tick):
+            logits, h_sim = self._forward_one(prev, t, h_sim)
+            nxt = self._sample(logits)
+            new_buf.append(nxt)
+            prev = nxt
+
+        self._rollout_buf = new_buf
+        self._h_rollout = h_sim
+        self._prev_rollout_tok = prev
+        self._rollout_next_tick = end_tick
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -308,10 +353,31 @@ class JazzImprov:
 
         Returns the updated rollout (list of token ids) covering the next
         `rollout_ticks` ticks starting from the new current_tick.
+
+        Behaviour:
+          * **Match** (`played_token == rollout[0]`): the rollout shifts by
+            one — the displayed future stays stable for the player.
+          * **Deviation** (mismatch): the next `deviation_lock_ticks - 1`
+            ticks are *locked* to display HOLDs (the deviation note is held
+            as a quarter note). The remainder of the rollout is regenerated
+            from a state simulated forward through those HOLDs. During the
+            lock, subsequent `commit()` calls ignore the player's input and
+            simply shift the rollout — giving the player time to read the
+            new future and the model time to recover.
         """
         if self.current_tick >= self.total_ticks:
             return list(self._rollout_buf)
 
+        # --- locked period: ignore played, advance with HOLD, shift+extend
+        if self._locked_ticks > 0:
+            self._advance_persistent(TOK_HOLD)
+            if self._rollout_buf:
+                self._rollout_buf.pop(0)
+            self._extend_rollout_by_one()
+            self._locked_ticks -= 1
+            return list(self._rollout_buf)
+
+        # --- normal tick
         matched = (
             len(self._rollout_buf) > 0
             and int(played_token) == int(self._rollout_buf[0])
@@ -322,7 +388,11 @@ class JazzImprov:
             self._rollout_buf.pop(0)
             self._extend_rollout_by_one()
         else:
-            self._refresh_rollout()
+            # Deviation: lock the next (deviation_lock_ticks - 1) ticks and
+            # rebuild the rollout starting from the state at tick T+lock.
+            n_lock = max(0, self.deviation_lock_ticks - 1)
+            self._build_deviation_rollout(n_lock)
+            self._locked_ticks = n_lock
 
         return list(self._rollout_buf)
 
