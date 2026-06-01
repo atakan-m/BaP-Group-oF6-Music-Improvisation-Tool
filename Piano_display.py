@@ -149,7 +149,12 @@ class Music:
         self.width = width
 
     def new_figure(self, bar):
+        if len(self.figure) > 0:
+            len_var = self.figure[0].length
+        if len_var == 0:
             self.figure.append(Figure(bar))
+        len_var -= 1
+        
             
     
     def new_beatbar(self):
