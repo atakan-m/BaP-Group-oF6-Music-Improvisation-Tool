@@ -1,0 +1,41 @@
+{
+  "n_solos": 429,
+  "n_notes": 187262,
+  "n_chords": 279,
+  "pitch_min": 38,
+  "pitch_max": 104,
+  "duration_edges": [
+    0.0,
+    0.21,
+    0.29,
+    0.42,
+    0.62,
+    0.85,
+    1.25,
+    1.75,
+    2.5,
+    null
+  ],
+  "duration_values": [
+    0.167,
+    0.25,
+    0.333,
+    0.5,
+    0.75,
+    1.0,
+    1.5,
+    2.0,
+    3.0
+  ],
+  "duration_labels": [
+    "32nd",
+    "16th",
+    "trip",
+    "8th",
+    "d8th",
+    "qtr",
+    "dqtr",
+    "half",
+    "long"
+  ]
+}
