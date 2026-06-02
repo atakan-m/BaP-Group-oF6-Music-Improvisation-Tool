@@ -42,7 +42,6 @@ def main():
 
 
     pygame.init()
-    print("where is this?")
     current_chord = [0, 0]
     chord_prog = []
     size = (1920, 1080) # width, height
@@ -68,7 +67,6 @@ def main():
     else:
         current_chord = [0, 0]
         chord_prog = []  
-    print("who is this?")
     while not done:
         screen.fill(WHITE)
         

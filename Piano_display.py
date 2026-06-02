@@ -18,53 +18,55 @@ FFT_SIZE = 2048
 WIDTH = 36
 HEIGHT = 20
 fps = 60 #bpm
-bpm = 60
+bpm = 140
 Testing_variable_for_testing = (fps*fps//bpm//4)
 speed = 1/Testing_variable_for_testing
 detector = bapv1.PureArrayDetector()
 
-hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20]
-key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1]
-buffer_sheet = [[],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],]
+hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20,-10]
+key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1]
+#buffer_sheet = [[0,16],]
                 
 
 sheet = [[0,0]]
-testing_sheet = [[1,4],
-                 [2,4],
-                 [3,4],
-                 [4,4],
-                 [5,4],
-                 [6,4],
-                 [7,4],
+testing_sheet = [
                  [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],
-                 [1,4],] #note, length
+                 [0,4],
+                 [2,5],
+                 [3,2],
+                 [4,3],
+                 [5,7],
+                 [6,10],
+                 [7,9],
+                 [8,3],
+                 [9,4],
+                 [10,4],
+                 [11,4],
+                 [12,4],
+                 [13,4],
+                 [14,4],
+                 [15,4],
+                 [16,4],
+                 [17,4],
+                 [18,4],
+                 [19,4],
+                 [20,4],
+                 [21,4],
+                 [22,4],
+                 [23,4],
+                 [24,4],
+                 [25,4],
+                 [26,4],
+                 [27,4],
+                 [28,4],
+                 [29,4],
+                 [30,4],
+                 [31,4],
+                 [32,4],
+                 [33,4],
+                 [34,4],
+                 [35,4],
+                 [36,4],] #note, length
 
 col_start = 48
 #notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, generate.iiVI_long, temperature=0.95)
@@ -88,12 +90,12 @@ if len(bapv1.PureArrayDetector().melody) > 0:
     inputty = {bapv1.PureArrayDetector().melody[0]}
 
 figures = [
-        1,2,3,4,5,6,7,8,9,10,11,12,
+        36,0,1,2,3,4,5,6,7,8,9,10,11,12,
          13,14,15,16,17,18,19,20,21,22,23,24,
-         25,26,27,28,29,30,31,32,33,34,35,36
+         25,26,27,28,29,30,31,32,33,34,35
         ]
 Note_list = [
-                  "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
+                  "NULL","C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     ]
@@ -117,7 +119,7 @@ class Figure:
         self.x = 0 #note
         self.y = 0
         self.tune = Note #Name of note
-        self._len = figures[Note[1]]
+        self._len = Note[1]
 
         self._image = figures[Note[0]]
 
@@ -134,26 +136,30 @@ class Figure:
     @property
     def length(self):
         return self._len
-len_var = 0
 
 class Music:
-    def __init__(self, height, width):
+    def __init__(self, height, width, sheet):
         self.score = 0
         self.x = 40
         self.y = 40
+        self.note = 0
+        self.delay = 16
         self.zoom = 33.333333
         self.figure = deque()
         self.fuck = False
-        self.beat_bars = [0]   
+        self.beat_bars = [0]
+
+        self.sheet = sheet
         self.height = height
         self.width = width
 
-    def new_figure(self, bar):
-        if len(self.figure) > 0:
-            len_var = self.figure[0].length
-        if len_var == 0:
-            self.figure.append(Figure(bar))
-        len_var -= 1
+    def new_figure(self):  #wait, append, track length
+        print(self.delay)
+        if self.note < len(self.sheet) and self.delay == 0:
+            self.figure.append(Figure(self.sheet[self.note]))
+            self.delay = Figure(self.sheet[self.note]).length
+            self.note +=1
+        self.delay -= 1
         
             
     
@@ -177,9 +183,9 @@ for chord in Buttons_v2.main():
 notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_prog_2*4, temperature=0.8)
 
 sheet = make_sheet(notes,36)
-total_sheet = buffer_sheet + testing_sheet
+total_sheet = testing_sheet
 
-real_pos = [40 + 33.333 * hor_pos[p] * 36/21 + 2 for p in range(36)]
+real_pos = [40 + 33.333 * hor_pos[p] * 36/21 + 2 for p in range(37)]
 
 # Initialize the game engine
 pygame.init()
@@ -202,7 +208,7 @@ pygame.display.set_caption("Jazz")
 done = False
 clock = pygame.time.Clock()
 
-game = Music(HEIGHT, WIDTH) #height, width
+game = Music(HEIGHT, WIDTH, total_sheet) #height, width, sheet
 counter = 0
 tally = 0
 pressing_down = False
@@ -237,9 +243,7 @@ while not done:
         counter = 0
 
     if counter % (Testing_variable_for_testing) == 0 or pressing_down:
-        if tally < len(total_sheet):
-            game.new_figure(total_sheet[tally])
-            tally += 1
+        game.new_figure()
         if len(game.figure) != 0 and game.figure[0].y > 19:
             game.figure.popleft()
         
@@ -265,13 +269,6 @@ while not done:
                 game.__init__(HEIGHT, WIDTH)
             if event.key == pygame.K_ESCAPE:
                 done = True
-            if event.key == pygame.K_LEFT:
-                if len(game.figure) > 0 and game.figure[0].y > 15 and game.figure[0].x == 0:
-                    game.score += 1
-                    game.figure.popleft()
-                elif game.score - 1 > 0:
-                    game.score -= 1
-                    game.fuck = True
 
     screen.blit(background, (0,0))
     
@@ -282,7 +279,7 @@ while not done:
             if figure.length != 0:
                 pygame.draw.rect(screen, (0, 100 * key_width[figure.image], 0), #screen and color
                     [real_pos[figure.image] + game.zoom * (0.5/key_width[figure.image] - 0.5), #x value of rectangle
-                    game.y + game.zoom * (figure.y - 1) + 1, #y value of rectangle
+                    game.y + game.zoom * (figure.y - figure.length) + 1, #y value of rectangle
                     1.7* game.zoom * key_width[figure.image] - 3, #Width of rectangle
                     game.zoom * figure.length - 3]) #Height of rectangle
                 screen.blit(font.render(figure.noteName, True, RED), [real_pos[figure.image] + (game.zoom *0.5), 
