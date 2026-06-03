@@ -124,13 +124,28 @@ class JazzImprov:
         the rollout by one when the player matches the prediction.
     """
 
+    # Default pitch the engine assumes the player is "on" right after reset.
+    # Matches the display's DEFAULT_DISPLAY_PITCH in Piano_display.py.
+    DEFAULT_CURRENT_PITCH = 60
+
     def __init__(
         self,
         checkpoint_path,
         data_dir="ML/data/processed",
         temperature=1.0,
-        rollout_ticks=53,            # ~10s at 80bpm, 16ths per beat
-        deviation_lock_ticks=4,      # quarter-note lock after a deviation
+        rollout_ticks=30,            # ~5.6s at 80bpm — only needs to cover
+                                     # the display's visible lookahead + buffer
+        deviation_lock_ticks=1,      # 1 = no lock, instant re-plan every deviation
+        hold_penalty=1.0,            # logit penalty on HOLD to discourage long
+                                     # held-note chains the model can fall into
+        rest_penalty=1.5,            # logit penalty on REST — same attractor
+                                     # problem, model can collapse into "play
+                                     # nothing forever" given silent context
+        max_consec_holds=None,       # HARD CAP: after this many HOLDs in a
+                                     # row, the next sample is forbidden from
+                                     # being HOLD. Caps worst-case note length.
+                                     # None = no cap. Typical: 4 (quarter),
+                                     # 8 (half), 16 (whole).
         seed=0,
         device=None,
     ):
@@ -139,7 +154,15 @@ class JazzImprov:
         self.temperature = float(temperature)
         self.rollout_ticks = int(rollout_ticks)
         self.deviation_lock_ticks = int(deviation_lock_ticks)
+        self.hold_penalty = float(hold_penalty)
+        self.rest_penalty = float(rest_penalty)
+        self.max_consec_holds = (None if max_consec_holds is None
+                                 else int(max_consec_holds))
         self._rng = np.random.default_rng(seed)
+        # Set by commit() so debug logging / display code can tell what
+        # branch the most recent commit took without re-implementing the
+        # match logic externally.
+        self.last_action = "init"    # one of: "init","match","deviation","locked","silence","done"
 
         # --- load model
         ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
@@ -177,6 +200,10 @@ class JazzImprov:
         # if the player is holding the deviation note (no new re-plan; the
         # rollout is shifted/extended each tick). Set by a deviation commit.
         self._locked_ticks = 0
+        # Pitch the engine believes the player is currently on. Used to
+        # resolve HOLD/REST tokens to pitches so the match check can compare
+        # at pitch level instead of token level.
+        self._current_pitch = self.DEFAULT_CURRENT_PITCH
 
     # ------------------------------------------------------------------
     # Setup
@@ -222,6 +249,7 @@ class JazzImprov:
         self._prev_rollout_tok = TOK_REST
         self._rollout_next_tick = 0
         self._locked_ticks = 0
+        self._current_pitch = self.DEFAULT_CURRENT_PITCH
         self._refresh_rollout()
 
     # ------------------------------------------------------------------
@@ -245,13 +273,65 @@ class JazzImprov:
         logits, hidden = self.model(pt, crt, cqt, bpt, hidden)
         return logits[0, 0], hidden
 
-    def _sample(self, logits):
+    def _sample(self, logits, consec_holds=0):
         l = logits.detach().cpu().numpy().astype(np.float64)
+        # Discourage HOLD chains: HOLD is the model's "safe" prediction after
+        # any unfamiliar context, which can produce minutes-long sustained
+        # notes. A mild logit penalty keeps it from dominating.
+        if self.hold_penalty != 0.0:
+            l[TOK_HOLD] -= self.hold_penalty
+        # Same attractor problem for REST — model can fall into "predict
+        # silence forever" especially when generation starts from a
+        # zero-state with REST as prev_token.
+        if self.rest_penalty != 0.0:
+            l[TOK_REST] -= self.rest_penalty
+        # HARD CAP: at low temperature the soft logit penalty can't always
+        # overcome a strongly held attractor (the model's HOLD logit after
+        # ~6 sustained ticks can be +2 above NOTE). Mask HOLD entirely once
+        # the per-rollout consecutive-HOLD count hits the cap.
+        if (self.max_consec_holds is not None
+                and consec_holds >= self.max_consec_holds):
+            l[TOK_HOLD] = -1e9
         l /= max(self.temperature, 1e-6)
         l -= l.max()
         p = np.exp(l)
         p /= p.sum()
         return int(self._rng.choice(len(p), p=p))
+
+    @staticmethod
+    def _count_trailing_holds(buf):
+        """Count HOLD tokens at the end of a token list."""
+        n = 0
+        for tok in reversed(buf):
+            if int(tok) == TOK_HOLD:
+                n += 1
+            else:
+                break
+        return n
+
+    def _token_to_pitch(self, tok):
+        """Resolve a token to a MIDI pitch using `_current_pitch` as the
+        carry-over for HOLD and REST (which carry no pitch of their own)."""
+        tok = int(tok)
+        if tok >= TOK_NOTE_BASE:
+            return PITCH_LOW + (tok - TOK_NOTE_BASE)
+        # HOLD or REST -> the pitch the player is currently on
+        return self._current_pitch
+
+    def _update_current_pitch(self, tok):
+        """Update the engine's pitch tracker after committing a token.
+        Only NOTE_x changes the current pitch; HOLD/REST carry it over."""
+        tok = int(tok)
+        if tok >= TOK_NOTE_BASE:
+            self._current_pitch = PITCH_LOW + (tok - TOK_NOTE_BASE)
+
+    @property
+    def current_pitch(self):
+        """The MIDI pitch the engine currently believes the player is on.
+        Used by the display renderer as the fallback for HOLD/REST tokens —
+        so e.g. immediately after a deviation, HOLDs render at the
+        deviation note rather than at the stale previously-displayed pitch."""
+        return self._current_pitch
 
     @staticmethod
     def _clone_hidden(hidden):
@@ -269,10 +349,12 @@ class JazzImprov:
         h = self._clone_hidden(self.h_persistent)
         prev = self.prev_actual
         buf = []
+        consec_holds = 0
         end_tick = min(self.current_tick + self.rollout_ticks, self.total_ticks)
         for t in range(self.current_tick, end_tick):
             logits, h = self._forward_one(prev, t, h)
-            nxt = self._sample(logits)
+            nxt = self._sample(logits, consec_holds)
+            consec_holds = consec_holds + 1 if nxt == TOK_HOLD else 0
             buf.append(nxt)
             prev = nxt
         self._rollout_buf = buf
@@ -285,8 +367,9 @@ class JazzImprov:
         t = self._rollout_next_tick
         if t >= self.total_ticks:
             return
+        consec_holds = self._count_trailing_holds(self._rollout_buf)
         logits, h = self._forward_one(self._prev_rollout_tok, t, self._h_rollout)
-        nxt = self._sample(logits)
+        nxt = self._sample(logits, consec_holds)
         self._rollout_buf.append(nxt)
         self._h_rollout = h
         self._prev_rollout_tok = nxt
@@ -330,12 +413,18 @@ class JazzImprov:
             prev = TOK_HOLD
 
         new_buf = [TOK_HOLD] * n_lock
+        # The lock already injected n_lock HOLDs at the front, so the
+        # consecutive-HOLD counter starts here. This matters: with a hard
+        # cap of 5, an 8-tick lock would already exceed it and force a
+        # NOTE on the very first fresh sample.
+        consec_holds = n_lock
         rollout_start = self.current_tick + n_lock
         n_more = self.rollout_ticks - n_lock
         end_tick = min(rollout_start + n_more, self.total_ticks)
         for t in range(rollout_start, end_tick):
             logits, h_sim = self._forward_one(prev, t, h_sim)
-            nxt = self._sample(logits)
+            nxt = self._sample(logits, consec_holds)
+            consec_holds = consec_holds + 1 if nxt == TOK_HOLD else 0
             new_buf.append(nxt)
             prev = nxt
 
@@ -366,33 +455,80 @@ class JazzImprov:
             new future and the model time to recover.
         """
         if self.current_tick >= self.total_ticks:
+            self.last_action = "done"
             return list(self._rollout_buf)
 
-        # --- locked period: ignore played, advance with HOLD, shift+extend
+        # --- locked period
+        # Normally during the lock we advance the persistent state with HOLD
+        # and ignore player input — this is what gives the visual "half-note
+        # sustain of the deviation note". But in jazz a deviation is often
+        # a quick 2-3 note ladder before settling into the long note, so we
+        # let a fresh NOTE_x attack at a *different* pitch break out of the
+        # lock and start a new deviation cycle. Same-pitch re-strikes, HOLD,
+        # and REST still go through the normal locked path.
         if self._locked_ticks > 0:
+            is_new_attack = int(played_token) >= TOK_NOTE_BASE
+            if is_new_attack:
+                new_pitch = PITCH_LOW + (int(played_token) - TOK_NOTE_BASE)
+                if new_pitch != self._current_pitch:
+                    # Treat as a fresh deviation: commit the new note, rebuild
+                    # the rollout from a state that records the ladder so far,
+                    # restart the lock from this new note.
+                    self._advance_persistent(played_token)
+                    self._update_current_pitch(played_token)
+                    n_lock = max(0, self.deviation_lock_ticks - 1)
+                    self._build_deviation_rollout(n_lock)
+                    self._locked_ticks = n_lock
+                    self.last_action = "deviation"
+                    return list(self._rollout_buf)
             self._advance_persistent(TOK_HOLD)
+            self._update_current_pitch(TOK_HOLD)   # no-op but documents intent
             if self._rollout_buf:
                 self._rollout_buf.pop(0)
             self._extend_rollout_by_one()
             self._locked_ticks -= 1
+            self.last_action = "locked"
             return list(self._rollout_buf)
 
-        # --- normal tick
-        matched = (
-            len(self._rollout_buf) > 0
-            and int(played_token) == int(self._rollout_buf[0])
-        )
+        # --- silence is never a deviation. If the player isn't playing
+        # anything, we treat that as "they're following the plan", commit
+        # the model's expected next token in place of REST so the engine's
+        # hidden state stays exactly on the planned trajectory, and skip
+        # the regenerate.
+        if int(played_token) == TOK_REST and self._rollout_buf:
+            played_token = int(self._rollout_buf[0])
+            matched = True
+            self.last_action = "silence"
+        else:
+            # --- normal tick — match at PITCH level so the player playing
+            # the displayed pitch (whether the model meant attack or
+            # sustain) counts as a match. The display can't distinguish
+            # NOTE_x from HOLD anyway: both render as the same pitch in
+            # `notes_in_row`, so comparing at token level would treat every
+            # commit as a deviation.
+            expected_pitch = (self._token_to_pitch(self._rollout_buf[0])
+                              if self._rollout_buf else None)
+            played_pitch = self._token_to_pitch(played_token)
+            matched = (played_pitch == expected_pitch)
+
         self._advance_persistent(played_token)
+        self._update_current_pitch(played_token)
 
         if matched:
             self._rollout_buf.pop(0)
             self._extend_rollout_by_one()
+            if self.last_action != "silence":   # was set above for the REST path
+                self.last_action = "match"
         else:
             # Deviation: lock the next (deviation_lock_ticks - 1) ticks and
             # rebuild the rollout starting from the state at tick T+lock.
+            # With deviation_lock_ticks=1 (the default) n_lock is 0, so the
+            # rollout is rebuilt immediately with no HOLD lock — the player
+            # sees the new plan from the very next tick onward.
             n_lock = max(0, self.deviation_lock_ticks - 1)
             self._build_deviation_rollout(n_lock)
             self._locked_ticks = n_lock
+            self.last_action = "deviation"
 
         return list(self._rollout_buf)
 

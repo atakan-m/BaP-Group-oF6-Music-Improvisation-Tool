@@ -380,8 +380,11 @@ def generate_music(model, chord_to_id_unused, chord_progression,
 def make_realtime_engine(chord_progression,
                          total_bars=64,
                          temperature=1.0,
-                         rollout_ticks=53,
-                         deviation_lock_ticks=4,
+                         rollout_ticks=30,
+                         deviation_lock_ticks=1,
+                         hold_penalty=1.0,
+                         rest_penalty=1.5,
+                         max_consec_holds=None,
                          seed=None):
     """One-call constructor for the re-planning engine.
 
@@ -419,6 +422,9 @@ def make_realtime_engine(chord_progression,
         temperature=temperature,
         rollout_ticks=rollout_ticks,
         deviation_lock_ticks=deviation_lock_ticks,
+        hold_penalty=hold_penalty,
+        rest_penalty=rest_penalty,
+        max_consec_holds=max_consec_holds,
         seed=seed if seed is not None else 0,
     )
     eng.set_progression(list(chord_progression), total_bars=total_bars)
@@ -437,6 +443,134 @@ def pitch_to_note_token(midi_pitch):
     elif p > 96:
         p = 96
     return TOK_NOTE_BASE + (p - PITCH_LOW)
+
+
+# ----------------------------------------------------------------------
+# Microphone-to-engine bridge: per-16th-note aggregator
+# ----------------------------------------------------------------------
+_NOTE_NAME_TO_PC = {"C": 0,  "C#": 1, "D": 2,  "D#": 3,
+                    "E": 4,  "F": 5,  "F#": 6, "G": 7,
+                    "G#": 8, "A": 9,  "A#": 10, "B": 11}
+
+
+def _note_name_to_midi(name):
+    """SP detector emits note names like 'C4'. Reverse that."""
+    if not name:
+        return None
+    i = 1
+    if i < len(name) and name[i] == "#":
+        i += 1
+    try:
+        return _NOTE_NAME_TO_PC[name[:i]] + (int(name[i:]) + 1) * 12
+    except (KeyError, ValueError):
+        return None
+
+
+class MicTickAggregator:
+    """Collects every audio-block detection during a 16th-note window and
+    emits ONE token per window at the tick boundary.
+
+    The new SP detector (`thepipeforrainier.PitchDetector`) fires every
+    HOP_SIZE=512 samples = ~11.6 ms at SR=44.1k. A 16th at 80 BPM is
+    ~187 ms, so each window sees ~16 audio blocks. Majority vote on the
+    observed MIDI pitches is far more robust than picking whatever the
+    last block happened to report.
+
+    Usage:
+        agg = generate.MicTickAggregator()
+
+        # Hook the SP detector callback so each audio block feeds the
+        # aggregator. The wrapper must be installed BEFORE the
+        # sd.InputStream is started.
+        original = detector.callback
+        def wrapped(indata, frames, time_info, status):
+            original(indata, frames, time_info, status)
+            agg.observe(detector.last_midi)     # int or None
+        detector.callback = wrapped
+
+        # Then at each 16th-note boundary in the main loop:
+        tok = agg.consume_token()
+        engine.commit(tok)
+
+    `consume_token()` returns one of:
+        TOK_REST  (0)              — silence dominated the window
+        TOK_HOLD  (1)              — same pitch as the previous window
+        NOTE_<midi> token          — new pitch (new attack)
+    """
+
+    # Pitch range we trust from the SP detector. Detections outside this
+    # range (typically HPS octave-down errors when the player isn't really
+    # playing, or sub-bass noise) are treated as silence rather than a
+    # spurious "note played". Matches the display's MIDI 48..83 window
+    # (C3 to B5 — three octaves starting at C, lining up with Note_list).
+    MIN_VALID_MIDI = 48
+    MAX_VALID_MIDI = 83
+
+    def __init__(self, min_midi=None, max_midi=None):
+        self._midis = []
+        self._prev_pitch = None
+        self.min_midi = self.MIN_VALID_MIDI if min_midi is None else int(min_midi)
+        self.max_midi = self.MAX_VALID_MIDI if max_midi is None else int(max_midi)
+
+    def _gate(self, midi):
+        """Reject out-of-range MIDIs as silence. Lower-octave HPS errors and
+        very-high background harmonics commonly fall outside the keyboard's
+        playable window; treating them as silence is much better than
+        feeding the model phantom notes."""
+        if midi is None:
+            return None
+        try:
+            m = int(midi)
+        except (TypeError, ValueError):
+            return None
+        if m < self.min_midi or m > self.max_midi:
+            return None
+        return m
+
+    def observe(self, midi_or_none):
+        """Add one audio-block observation to the current window.
+
+        Pass the SP detector's `last_midi` (int MIDI number, or None for
+        silence). Strings (e.g. `last_note`) are also tolerated for
+        backwards compat with the old detector."""
+        if midi_or_none is None:
+            self._midis.append(None)
+        elif isinstance(midi_or_none, (int, float)):
+            self._midis.append(self._gate(midi_or_none))
+        elif isinstance(midi_or_none, str):
+            self._midis.append(self._gate(_note_name_to_midi(midi_or_none)))
+        else:
+            self._midis.append(None)
+
+    def reset(self):
+        self._midis.clear()
+        self._prev_pitch = None
+
+    def consume_token(self):
+        """Pick the dominant MIDI pitch in the just-finished window, return
+        the appropriate engine token, and clear the window."""
+        observations = self._midis
+        self._midis = []
+
+        # If more than half the window was silence, call it silence.
+        # Otherwise take the most-observed valid pitch.
+        n = len(observations)
+        valid = [m for m in observations if m is not None]
+        if not valid or len(valid) * 2 < n:
+            self._prev_pitch = None
+            return TOK_REST
+
+        # Majority vote on MIDI
+        counts = {}
+        for m in valid:
+            counts[m] = counts.get(m, 0) + 1
+        dominant_midi = max(counts.items(), key=lambda kv: kv[1])[0]
+
+        is_new_attack = (dominant_midi != self._prev_pitch)
+        self._prev_pitch = dominant_midi
+        if is_new_attack:
+            return pitch_to_note_token(dominant_midi)
+        return TOK_HOLD
 
 
 # Try to load the model now so `generate.LSTMmodel` is immediately
