@@ -66,7 +66,7 @@ def hps(mag_full: np.ndarray, harmonics: int = HPS_HARMONICS) -> np.ndarray:
 
 
 # ──────────────────────────── Detector ───────────────────────────────
-class PitchDetector:
+class PureArrayDetector:
     def __init__(self):
         self.buf           = np.zeros(FFT_SIZE, dtype=np.float64)
         self.filter_zi     = np.zeros((_sos.shape[0], 2))
@@ -192,8 +192,8 @@ class PitchDetector:
                 self.keyboard[self.last_midi - 21] = 0
             self.last_midi = midi
 
-            self.melody    = np.roll(self.melody, 1)
-            self.melody[0] = note
+            self.melody    = np.roll(self.melody, -1)
+            self.melody[-1] = note
             if 21 <= midi <= 108:
                 self.keyboard[midi - 21] = 1
 
@@ -204,7 +204,7 @@ class PitchDetector:
 
 # ────────────────────────────── Main ─────────────────────────────────
 def main():
-    det = PitchDetector() 
+    det = PureArrayDetector() 
     print(f"Listening …  FFT={FFT_SIZE}  hop={HOP_SIZE}  "
           f"HPS harmonics={HPS_HARMONICS}  Ctrl-C to stop\n")
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
