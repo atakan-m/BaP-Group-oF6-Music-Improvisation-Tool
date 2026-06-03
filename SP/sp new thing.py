@@ -1,13 +1,14 @@
 import numpy as np
 import sounddevice as sd
 from scipy.signal import butter, sosfilt
+import matplotlib.pyplot as plt
 
 # ─────────────────────────── Configuration ───────────────────────────
 SAMPLE_RATE    = 44100
 FFT_SIZE       = 4096      # ~10.8 Hz/bin — good frequency resolution
-HOP_SIZE       = 1024      # callback block size
+HOP_SIZE       = 1024      # callback block size 
 A4_FREQ        = 440.0
-SILENCE_THRESH = 0.015     # RMS gate
+SILENCE_THRESH = 0.005     # RMS gate
 
 NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
@@ -36,7 +37,7 @@ HI_BIN = int(np.searchsorted(FREQS, HI_HZ))
 
 # ─────────────────────────── Helpers ─────────────────────────────────
 def freq_to_midi(freq: float) -> int:
-    return round(12.0 * np.log2(max(freq, 1e-10) / A4_FREQ) + 69)
+    return round(12.0 * np.log2((freq + 1e-60) / A4_FREQ) + 69)
 
 def midi_to_name(m: int) -> str:
     return f"{NOTE_NAMES[m % 12]}{(m // 12) - 1}"
@@ -66,19 +67,19 @@ def hps(mag_full: np.ndarray, harmonics: int = HPS_HARMONICS) -> np.ndarray:
 
 
 # ──────────────────────────── Detector ───────────────────────────────
-class PitchDetector:
+class PureArrayDetector:
     def __init__(self):
         self.buf           = np.zeros(FFT_SIZE, dtype=np.float64)
         self.filter_zi     = np.zeros((_sos.shape[0], 2))
 
-        self.prev_mag_norm = np.zeros(FFT_SIZE // 2 + 1)
+        self.prev_mag = np.zeros(FFT_SIZE // 2 + 1)
         self.flux_hist     = np.zeros(FLUX_HISTORY)
 
         self.last_midi     = None
         self.cand_midi     = None
         self.cand_count    = 0
 
-        self.melody        = np.full(10, "", dtype="<U7")
+        self.melody        = np.full(16, "", dtype="<U7")
         self.keyboard      = np.zeros(88)
 
     # ── filter ───────────────────────────────────────────────────────
@@ -87,13 +88,14 @@ class PitchDetector:
         return out
 
     # ── onset ─────────────────────────────────────────────────────────
-    def _update_onset(self, mag_norm: np.ndarray) -> bool:
-        flux = float(np.sum(np.maximum(mag_norm - self.prev_mag_norm, 0.0)))
-        self.prev_mag_norm = mag_norm
+    def _update_onset(self, mag: np.ndarray) -> bool:
+        flux = float(np.sum(np.maximum(mag - self.prev_mag, 0.0)))
+        self.prev_mag = mag
         self.flux_hist     = np.roll(self.flux_hist, -1)
         self.flux_hist[-1] = flux
         nonzero = self.flux_hist[self.flux_hist > 0]
-        if len(nonzero) < 3:
+        flux_max = np.max(self.flux_hist)
+        if (flux - np.median(nonzero)) / flux_max < 0.2:
             return False
         return flux > FLUX_MULT * float(np.median(nonzero))
 
@@ -147,10 +149,11 @@ class PitchDetector:
 
     # ── callback ──────────────────────────────────────────────────────
     def callback(self, indata, frames, time_info, status):
-        block = indata[:, 0].astype(np.float64)
-
+        block = np.mean(indata, axis=1).astype(np.float64)
+        
         # Silence gate
         rms = float(np.sqrt(np.mean(block ** 2)))
+        # # print(int(rms))
         if rms < SILENCE_THRESH:
             self.last_midi  = None
             self.cand_midi  = None
@@ -166,8 +169,8 @@ class PitchDetector:
         mag_full = np.abs(np.fft.rfft(self.buf * WINDOW))
 
         # Normalised magnitude for onset (loudness-independent)
-        mag_norm = mag_full / (mag_full.max() + 1e-10)
-        onset    = self._update_onset(mag_norm)
+        # mag_norm = mag_full / (mag_full.max() + 1e-60)
+        onset    = self._update_onset(mag_full)
 
         # Pitch
         freq_hz = self._detect_pitch(mag_full)
@@ -192,8 +195,8 @@ class PitchDetector:
                 self.keyboard[self.last_midi - 21] = 0
             self.last_midi = midi
 
-            self.melody    = np.roll(self.melody, 1)
-            self.melody[0] = note
+            self.melody    = np.roll(self.melody, -1)
+            self.melody[-1] = note
             if 21 <= midi <= 108:
                 self.keyboard[midi - 21] = 1
 
@@ -204,10 +207,10 @@ class PitchDetector:
 
 # ────────────────────────────── Main ─────────────────────────────────
 def main():
-    det = PitchDetector() 
+    det = PureArrayDetector() 
     print(f"Listening …  FFT={FFT_SIZE}  hop={HOP_SIZE}  "
           f"HPS harmonics={HPS_HARMONICS}  Ctrl-C to stop\n")
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=2,
                         blocksize=HOP_SIZE, dtype="float32",
                         callback=det.callback):
         try:
