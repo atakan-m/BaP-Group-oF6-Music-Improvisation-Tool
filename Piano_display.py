@@ -23,11 +23,8 @@ Testing_variable_for_testing = (fps*fps//bpm//4)
 speed = 1/Testing_variable_for_testing
 detector = bapv1.PureArrayDetector()
 
-
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20,-10]
-key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1]
-#buffer_sheet = [[0,16],]
-                
+key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1]              
 
 sheet = [[0,0]]
 testing_sheet = [
@@ -85,11 +82,6 @@ def make_sheet(notes):
     sheet = [[note[0] - 48, note[1] * 4] for note in notes]
     return sheet
 
-
-inputty = set()
-if len(bapv1.PureArrayDetector().melody) > 0:
-    inputty = {bapv1.PureArrayDetector().melody[0]}
-
 figures = [
         36,0,1,2,3,4,5,6,7,8,9,10,11,12,
          13,14,15,16,17,18,19,20,21,22,23,24,
@@ -100,22 +92,9 @@ Note_list = [
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
                   "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     ]
-x = 0 
-'''def check_note(game, inputty, x):
-    setty = set()
-    if len(game.figure) != 0:
-        for i in game.figure[0].image:
-            if i:
-                setty.add(i)
-            if game.figure[0].y > 15 and inputty.issubset(setty):
-                game.figure.popleft()
-                return True
-            #if game.figure[0].y > 15:
 
-    return None'''
 
 class Figure:
-
     def __init__(self, Note):
         self.x = 0 #note
         self.y = 0
@@ -138,6 +117,7 @@ class Figure:
     def length(self):
         return self._len
 
+
 class Music:
     def __init__(self, height, width, sheet):
         self.score = 0
@@ -158,7 +138,7 @@ class Music:
             self.figure.append(Figure(self.sheet[self.note]))
             self.delay = Figure(self.sheet[self.note]).length
             self.note +=1
-        print(self.delay)
+        #print(self.delay)
         
     def new_beatbar(self):
         self.beat_bars.append(0)
@@ -179,8 +159,6 @@ for chord in Buttons_v2.main():
     chord_prog_2.append((chord,4))
 notes = generate.generate_music(generate.LSTMmodel, generate.chord_to_id, chord_prog_2*4, temperature=0.8)
 sheet = make_sheet(notes)
-print(sheet)
-total_sheet = sheet
 
 real_pos = [40 + 33.333 * hor_pos[p] * 36/21 + 2 for p in range(37)]
 
@@ -196,7 +174,7 @@ RED = (255, 0, 0)
 
 size = (1280, 720) # width, height
 flags = pygame.FULLSCREEN
-screen = pygame.display.set_mode(size, vsync=1)
+screen = pygame.display.set_mode(size, vsync=1) #voeg hier flag toe voor fullscreen
 font = pygame.font.SysFont('Calibri', 40, True, False)
 font1 = pygame.font.SysFont('Calibri', 50, True, False)
 pygame.display.set_caption("Jazz")
@@ -205,10 +183,8 @@ pygame.display.set_caption("Jazz")
 done = False
 clock = pygame.time.Clock()
 
-game = Music(HEIGHT, WIDTH, total_sheet) #height, width, sheet
+game = Music(HEIGHT, WIDTH, sheet) #height, width, sheet
 counter = 0
-tally = 0
-pressing_down = False
 
 background = pygame.Surface(size)
 background.fill(WHITE)
@@ -239,9 +215,9 @@ while not done:
     if counter > 100000:
         counter = 0
 
-    if counter % (Testing_variable_for_testing) == 0 or pressing_down:
+    if counter % (Testing_variable_for_testing) == 0:
         game.new_figure()
-        if len(game.figure) != 0 and game.figure[0].y > 15:
+        if len(game.figure) != 0 and game.figure[0].y > (15 + game.figure[0].length):
             game.figure.popleft()
     
     if counter % (Testing_variable_for_testing*16) == 0:
@@ -249,27 +225,22 @@ while not done:
     
     game.delay -= 1/Testing_variable_for_testing
             
-
     game.go_down()
-    '''if check_note(game, inputty, game.score) and inputty and counter > 16 :
-        game.score += 1'''
-    #else:
-        #game.score -= 1
             
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             done = True
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_r:
-                game.__init__(HEIGHT, WIDTH, total_sheet)
-            if event.key == pygame.K_ESCAPE:
+                game.__init__(HEIGHT, WIDTH, sheet)
+            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
                 done = True
 
     screen.blit(background, (0,0))
     
     if game.figure is not None:
         for figure in game.figure:
-            if figure.y < -2 or figure.y > 21:
+            if figure.y < -2 or figure.y > 30:
                 continue
             if figure.length != 0:
                 pygame.draw.rect(screen, (0, 100 * key_width[figure.image], 0), #screen and color
@@ -280,8 +251,10 @@ while not done:
                 screen.blit(font.render(figure.noteName, True, RED), [real_pos[figure.image] + (game.zoom *0.5), 
                     game.y + game.zoom * (figure.y - 1)])
     if game.beat_bars is not None:
-        for k in range(len(game.beat_bars)):
-            pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * game.beat_bars[k] - 3], [game.x + game.zoom* WIDTH, game.y + game.zoom * game.beat_bars[k] - 3] )
+        for beat_bar in game.beat_bars:
+            if beat_bar > 20:
+                continue
+            pygame.draw.line(screen, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * beat_bar - 3], [game.x + game.zoom* WIDTH, game.y + game.zoom * beat_bar - 3] )
 
     text = font1.render("Score: " + str(game.score), True, BLACK)
     text1 = font1.render("BPM: " + str(bpm), True, BLACK)
@@ -302,9 +275,7 @@ while not done:
     screen.blit(text3, [game.zoom * 25 ,0])
     #text_game_over1 = font1.render("Press ESC", True, (255, 215, 0))
     
-
     pygame.display.flip()
     clock.tick(fps)
-
 
 pygame.quit()
