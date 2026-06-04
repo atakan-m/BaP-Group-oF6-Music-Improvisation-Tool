@@ -501,7 +501,13 @@ class JazzImprov:
 # =====================================================================
 
 _HERE       = os.path.dirname(os.path.abspath(__file__))
-_CKPT_PATH  = os.path.join(_HERE, "checkpoints", "jazz_lstm.pt")
+
+# ============================================================
+#   ↓↓↓  CHANGE THIS LINE TO SWITCH WHICH MODEL IS LOADED  ↓↓↓
+# ============================================================
+DEFAULT_CHECKPOINT = os.path.join(_HERE, "models", "jazz_lstm.pt")
+# ============================================================
+
 _VOCAB_PATH = os.path.join(_HERE, "data", "processed", "chord_vocab.json")
 
 
@@ -520,7 +526,7 @@ def make_engine(chord_progression, *,
     inference (~3x speedup, no measurable quality loss). Set False to keep
     full fp32. Set `jit=True` to additionally TorchScript-compile.
     """
-    checkpoint_path = checkpoint_path or _CKPT_PATH
+    checkpoint_path = checkpoint_path or DEFAULT_CHECKPOINT
     vocab_path      = vocab_path      or _VOCAB_PATH
 
     model, _ = load_model(checkpoint_path, device=device,

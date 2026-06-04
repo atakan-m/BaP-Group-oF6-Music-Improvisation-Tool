@@ -76,17 +76,18 @@ class PureArrayDetector:
         freq_of_max = FREQS[mask][np.argmax(spectrum[mask])]
         
         note_num = self.freq_to_midi(freq_of_max)
+        
         note = self.midi_to_name(note_num)
         
         if onset or note != self.last_note:
             self.melody.append(note)
             self.last_note = note
-            
+            self.last_midi = note_num
             if 21 <= note_num <= 108: 
                 self.keyboard[note_num - 21] = 1
             
             marker = "* " if onset else "  "  # * marks a detected onset
-            print(f"{marker}{freq_of_max:.1f} Hz  ->  {note}   |  {' '.join(self.melody)}")
+            #print(f"{marker}{freq_of_max:.1f} Hz  ->  {note}   |  {' '.join(self.melody)}")
         else:
             self.keyboard = np.zeros(88)
         

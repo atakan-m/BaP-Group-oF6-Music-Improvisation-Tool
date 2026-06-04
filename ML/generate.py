@@ -1,10 +1,23 @@
-"""Public entry point used by Piano_display.py, plus a CLI for offline
-MIDI rendering (testing the model without the SP/HW stack).
+"""Offline-MIDI CLI + a few re-exports for old import paths.
 
-For new code import directly from `engine` instead of this module.
+This module exists for two reasons:
+
+1. **Offline MIDI generation** (the `main()` CLI below) — for testing the
+   model without booting Piano_display. Renders a solo + chord-comping
+   track to a Standard MIDI File you can open in any DAW.
+
+2. **Re-exports from `engine.py`** so older scripts that did
+   `from generate import …` still work. Anything new should import
+   directly from `engine` and `model`.
+
+The old static-sheet `generate_music(LSTMmodel, chord_to_id, …)` API has
+been removed — Piano_display now uses `realtime_sheet.RealtimeSheet`
+which drives the engine in realtime. Even when the player isn't playing,
+the engine treats silence as "follow the plan" and self-improvises, so
+there's no need for a separate offline generator inside Piano_display.
 """
 
-# ----- Re-exports kept for backwards compatibility with Piano_display.py -----
+# ----- Re-exports kept for older import paths --------------------------
 from engine import (
     JazzImprov,
     MicTickAggregator,
@@ -20,7 +33,7 @@ from model import (
 
 
 # ======================================================================
-# CLI: offline MIDI generation for testing
+# Offline MIDI rendering — used by the CLI
 # ======================================================================
 
 def _tokens_to_events(tokens):
@@ -42,7 +55,6 @@ def _tokens_to_events(tokens):
     return events
 
 
-# Minimal chord-voicing table for the chord-comping track in the output MIDI.
 _CHORD_INTERVALS = {
     "":   [0, 4, 7],            "6":   [0, 4, 7, 9],
     "j":  [0, 4, 7, 11],        "j7":  [0, 4, 7, 11],
@@ -64,8 +76,8 @@ def _chord_voicing(chord_str, bass_min=36, upper_min=48):
     root, quality = p
     iv = _CHORD_INTERVALS.get(quality)
     if iv is None:
-        # heuristic fallback for unseen qualities
-        for prefix in ("-7b5", "-j", "-7", "-6", "-9", "-", "j", "o7", "o", "+", "sus"):
+        for prefix in ("-7b5", "-j", "-7", "-6", "-9", "-",
+                       "j", "o7", "o", "+", "sus"):
             if quality.startswith(prefix):
                 iv = _CHORD_INTERVALS[prefix]
                 break
@@ -91,19 +103,17 @@ def _make_track(payload):
 
 
 def write_midi(tokens, bar_chords, out_path, tempo_bpm=80, ticks_per_quarter=480):
-    """Render a sequence of (REST/HOLD/NOTE_x) tokens + the chord progression
-    to a Standard MIDI File. Two tracks: melody on channel 0, comping on 1."""
+    """Render a token sequence + chord progression into a Standard MIDI File.
+    Three tracks: tempo, melody (channel 0), chord comping (channel 1)."""
     import struct
     grid = ticks_per_quarter // TICKS_PER_BEAT     # MIDI ticks per 16th
     bar_mt = TICKS_PER_BAR * grid
 
-    # tempo track
     micros = int(60_000_000 / tempo_bpm)
     tempo = bytearray()
     tempo += _vlq(0) + b"\xff\x51\x03" + micros.to_bytes(3, "big")
     tempo += _vlq(0) + b"\xff\x2f\x00"
 
-    # melody track
     mel = bytearray()
     last_off = 0
     for onset, midi, dur in _tokens_to_events(tokens):
@@ -114,7 +124,6 @@ def write_midi(tokens, bar_chords, out_path, tempo_bpm=80, ticks_per_quarter=480
         last_off = onset_mt + dur_mt
     mel += _vlq(0) + b"\xff\x2f\x00"
 
-    # chord comping track
     chord = bytearray()
     for c in bar_chords:
         v = _chord_voicing(c)
@@ -132,23 +141,23 @@ def write_midi(tokens, bar_chords, out_path, tempo_bpm=80, ticks_per_quarter=480
         f.write(header + _make_track(tempo) + _make_track(mel) + _make_track(chord))
 
 
-def main():
-    """CLI entry point for offline-MIDI generation. Useful for testing the
-    model without the SP / Piano_display stack.
+# ======================================================================
+# CLI: `python ML/generate.py --chords "..." --bars N --out song.mid`
+# ======================================================================
 
-    Generation is just "let the engine improvise into silence" — we call
-    `commit(REST)` each tick, which by design treats silence as match and
-    commits the model's expected next token. The resulting committed
-    sequence is the model's straight rollout."""
+def main():
+    """Drive the engine into silence (REST is always treated as match) so
+    it walks its own plan, then export the result as MIDI."""
     import argparse
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--chords",      default="Dm7,G7,Cj7,Cj7",
                     help="comma-separated chord progression (expressed in C)")
     ap.add_argument("--bars",        type=int,   default=16)
-    ap.add_argument("--temperature", type=float, default=1.0)
-    ap.add_argument("--hold_penalty",type=float, default=0.0)
-    ap.add_argument("--rest_penalty",type=float, default=1.0)
+    ap.add_argument("--temperature", type=float, default=0.8)
+    ap.add_argument("--hold_penalty",type=float, default=0.5)
+    ap.add_argument("--rest_penalty",type=float, default=1.5)
+    ap.add_argument("--max_consec_holds", type=int, default=8)
     ap.add_argument("--seed",        type=int,   default=0)
     ap.add_argument("--tempo_bpm",   type=int,   default=80)
     ap.add_argument("--out",         default="generated_solo.mid")
@@ -161,8 +170,9 @@ def main():
         temperature=args.temperature,
         hold_penalty=args.hold_penalty,
         rest_penalty=args.rest_penalty,
+        max_consec_holds=args.max_consec_holds,
         seed=args.seed,
-        quantize=False,           # full fp32 for offline; speed not critical
+        quantize=False,           # full fp32 — speed isn't critical offline
     )
 
     tokens = []

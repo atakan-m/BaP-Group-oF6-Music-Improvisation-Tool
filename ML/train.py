@@ -26,7 +26,10 @@ from model import JazzLSTM
 
 
 DATA_DIR  = os.path.join("ML", "data", "processed")
-CKPT_PATH = os.path.join("ML", "checkpoints", "jazz_lstm.pt")
+# Where to save the trained checkpoint. Inference reads this same path by
+# default (see engine.py's DEFAULT_CHECKPOINT). To train multiple models
+# without overwriting, change the filename here, e.g. "jazz_lstm_v2.pt".
+CKPT_PATH = os.path.join("ML", "models", "jazz_lstm.pt")
 
 
 # ---------------------------------------------------------------
