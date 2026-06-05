@@ -1,24 +1,35 @@
-"""Realtime glue between the JazzImprov engine and the static-sheet
-Piano_display.
+"""Realtime glue between the JazzImprov engine and Piano_display.
 
-`Piano_display` reads a `sheet = [(col, length), ...]` list and spawns one
+`Piano_display` reads a `sheet = [[col, length], ...]` list and spawns one
 figure per entry, waiting `length` ticks between spawns. This module owns
-the engine, the mic aggregator, and the sheet — keeps the sheet up to date
-each 16th-note tick by:
+the engine, the mic aggregator, and the sheet — keeping it up to date
+each 16th-note tick:
 
-    1. consuming player input from the SP aggregator,
-    2. committing it to the engine (advances persistent state, possibly
-       triggers a deviation rebuild of the rollout),
-    3. refreshing the *future* tail of the sheet from the new rollout while
-       leaving already-spawned events alone.
+    1. Consume player input from the SP aggregator.
+    2. Commit it to the engine (advances persistent state, possibly
+       triggers a deviation rebuild of the rollout).
+    3. If the engine just committed a NOTE_x, **append a new event** to
+       the sheet with length = 1 + (count of leading HOLDs in the new
+       rollout). HOLD/REST commits don't add events — they're already
+       baked into the previous note's length.
 
-So when the player matches the plan the sheet stays stable; when they
-deviate, the upcoming spawns reflect the model's new plan.
+This commit-driven incremental design has a few nice properties:
 
-Wiring from Piano_display.py is small:
+  * The sheet only ever **grows**, never gets truncated or retroactively
+    rewritten — so Piano_display can never run out of upcoming events.
+  * On a deviation, the engine commits the player's NOTE_y. The new
+    rollout begins with the forced lock HOLDs, so the deviation note's
+    length is exactly the lock duration (4 ticks = quarter). The player
+    sees their wrong note rendered as a held quarter, then upcoming
+    notes reflect the model's recovery plan.
+  * Silence-as-match: when the player isn't playing, the engine commits
+    its own predicted token. NOTE_x predictions appear in the sheet
+    immediately, so the display keeps showing fresh material.
+
+Wiring from Piano_display.py:
 
     from realtime_sheet import RealtimeSheet
-    rs = RealtimeSheet(chord_prog_2, total_bars=64)
+    rs = RealtimeSheet(chord_prog, total_bars=64)
     sheet = rs.sheet                 # share the list reference
 
     # Hook the SP detector callback so every audio block feeds the aggregator
@@ -29,12 +40,12 @@ Wiring from Piano_display.py is small:
     detector.callback = _hooked
 
     game = Music(HEIGHT, WIDTH, sheet)
-    rs.attach_music(game)            # rs reads game.note for spawn progress
+    rs.attach_music(game)
 
-    # In the per-16th-note block of the main loop:
+    # In the per-16th-note block of the main loop, BEFORE game.new_figure():
     if counter % (Testing_variable_for_testing) == 0:
-        rs.tick()                    # ← only new line in the inner loop
-        game.new_figure()
+        rs.tick()                    # ← commits first, may append to sheet
+        game.new_figure()             # ← then spawn from updated sheet
         ...
 """
 
@@ -43,37 +54,6 @@ from engine import (
     TOK_REST, TOK_HOLD, TOK_NOTE_BASE,
     PITCH_LOW,
 )
-
-
-# ----------------------------------------------------------------------
-# Token sequence -> discrete sheet events
-# ----------------------------------------------------------------------
-
-def tokens_to_events(tokens, col_start=48):
-    """Convert a per-tick token sequence into discrete display events.
-
-    Each NOTE_x starts a new event with length = 1 + (count of following
-    HOLDs). REST and any leading HOLDs (before the first NOTE_x) are
-    skipped. Returns list of `[col_index, length]` lists (mutable, since
-    Piano_display indexes them like list-of-lists).
-    """
-    events = []
-    i, n = 0, len(tokens)
-    while i < n:
-        tok = int(tokens[i])
-        if tok >= TOK_NOTE_BASE:
-            midi = PITCH_LOW + (tok - TOK_NOTE_BASE)
-            col = max(0, midi - col_start)
-            length = 1
-            j = i + 1
-            while j < n and int(tokens[j]) == TOK_HOLD:
-                length += 1
-                j += 1
-            events.append([col, length])
-            i = j
-        else:
-            i += 1
-    return events
 
 
 # ----------------------------------------------------------------------
@@ -87,8 +67,8 @@ class RealtimeSheet:
     State:
       * `self.engine`     — JazzImprov instance
       * `self.aggregator` — MicTickAggregator (hook the SP callback into it)
-      * `self.sheet`      — the list Music reads; mutated in place
-      * `self._music`     — attached Music (so we can read its spawn counter)
+      * `self.sheet`      — the list Music reads; mutated in place (appended)
+      * `self._music`     — attached Music (so we can read spawn progress)
     """
 
     # Reasonable realtime defaults — overridable via __init__ kwargs.
@@ -130,18 +110,28 @@ class RealtimeSheet:
         self.engine = make_engine(bar_prog, total_bars=total_bars, **kwargs)
         self.aggregator = MicTickAggregator()
 
-        # Initial sheet = whatever the engine predicted before anyone played
-        self.sheet = tokens_to_events(self.engine.rollout(), self.col_start)
+        # Sheet is built INCREMENTALLY from committed tokens. Starts empty;
+        # the first few engine commits (silence-as-match) populate it within
+        # ~3–5 wall-clock ticks (max_consec_holds caps the gap between NOTEs).
+        self.sheet = []
 
         self._music = None
         self._tick_count = 0
+        # On deviation we pre-populate sheet[spawned_count:] with the
+        # deviation note + the model's post-lock predictions, so Music
+        # always has something to spawn during the lock period. The engine
+        # will later commit those same predictions via silence-as-match and
+        # the incremental append branch would duplicate them — this counter
+        # tells it to skip the next N NOTE_x appends.
+        self._suppress_appends = 0
 
     # ------------------------------------------------------------------
     # Wiring
     # ------------------------------------------------------------------
     def attach_music(self, music):
-        """Connect the Music instance so we know which sheet events have
-        been spawned (and therefore can't be rewritten on deviation)."""
+        """Connect the Music instance so we know how many sheet events
+        have been spawned (used for the debug HUD only — sheet itself is
+        append-only and doesn't need this for correctness)."""
         self._music = music
 
     @property
@@ -153,9 +143,22 @@ class RealtimeSheet:
     # The per-tick loop
     # ------------------------------------------------------------------
     def tick(self):
-        """Call exactly once per 16th-note tick. Reads player input from
-        the aggregator, commits to the engine, refreshes the future tail
-        of the sheet from the new rollout."""
+        """Call exactly once per 16th-note tick, BEFORE game.new_figure().
+
+        Three cases:
+
+        * **deviation** — the player just played a wrong note. Drop the
+          stale upcoming plan (`sheet[spawned_count:]`) and replace it
+          with the deviation note as a held quarter (length = 1 + the
+          engine's forced lock HOLDs). The next ~3 ticks will be locked
+          and won't touch the sheet; the post-lock NOTE commits will
+          then incrementally fill in the model's new plan.
+        * **match / silence** — the engine committed its plan token. If
+          it was a NOTE_x, append a new event to the sheet with length
+          = 1 + leading HOLDs in the rollout. HOLDs/RESTs are absorbed
+          into the previous note's length and add nothing.
+        * **locked / done / init** — leave the sheet alone.
+        """
         token = self.aggregator.consume_token()
         self.engine.commit(token)
         self._tick_count += 1
@@ -163,14 +166,100 @@ class RealtimeSheet:
         if self.engine.is_done:
             return
 
-        # Replace the future-tail of the sheet with events derived from
-        # the new rollout. Past events (sheet[:spawned_count]) are left
-        # alone — they're already on screen as Figures.
-        new_tail = tokens_to_events(self.engine.rollout(), self.col_start)
-        self.sheet[self.spawned_count:] = new_tail
+        action = self.engine.last_action
+
+        # ------------- deviation: realtime re-plan -------------
+        if action == "deviation":
+            # Determine the deviation pitch:
+            #   * If the player attacked a new NOTE_x → use that pitch.
+            #   * If they sustained a HOLD while the model expected a new
+            #     note → use engine.current_pitch (the pitch they're on).
+            committed = int(self.engine.prev_actual)
+            if committed >= TOK_NOTE_BASE:
+                midi = PITCH_LOW + (committed - TOK_NOTE_BASE)
+            else:
+                midi = self.engine.current_pitch
+            col = max(0, midi - self.col_start)
+
+            # Length = 1 (the NOTE) + n_lock forced HOLDs at the front of
+            # the freshly-rebuilt rollout (the engine's lock period).
+            rollout = self.engine.rollout()
+            n_lock = 0
+            for tok in rollout:
+                if int(tok) == TOK_HOLD:
+                    n_lock += 1
+                else:
+                    break
+            dev_event = [col, 1 + n_lock]
+
+            # Extract the model's POST-lock predictions so Music has events
+            # to spawn during the lock instead of staring at an empty queue.
+            post_lock_events = self._tokens_to_events(rollout[n_lock:])
+
+            # Drop the stale upcoming plan; insert the deviation note +
+            # the new post-lock plan as the next things to scroll in.
+            self.sheet[self.spawned_count:] = [dev_event] + post_lock_events
+
+            # The engine will commit those same post-lock NOTEs over the
+            # next ~rollout_ticks ticks via silence-as-match. Tell the
+            # incremental append branch to skip exactly len(post_lock_events)
+            # NOTE_x commits so we don't add the same events twice.
+            self._suppress_appends = len(post_lock_events)
+
+            if self.debug:
+                print(f"  >>> DEVIATION midi={midi} col={col} "
+                      f"length={1 + n_lock}  +{len(post_lock_events)} post-lock events  "
+                      f"spawned_count={self.spawned_count}  "
+                      f"sheet_len_now={len(self.sheet)}")
+
+        # ------------- match / silence: incremental append -------------
+        elif action in ("match", "silence"):
+            committed = int(self.engine.prev_actual)
+            if committed >= TOK_NOTE_BASE:
+                if self._suppress_appends > 0:
+                    # This NOTE was already inserted into the sheet by the
+                    # deviation pre-population; don't double-add it.
+                    self._suppress_appends -= 1
+                else:
+                    midi = PITCH_LOW + (committed - TOK_NOTE_BASE)
+                    col  = max(0, midi - self.col_start)
+                    length = 1
+                    for tok in self.engine.rollout():
+                        if int(tok) == TOK_HOLD:
+                            length += 1
+                        else:
+                            break
+                    self.sheet.append([col, length])
+
+        # ------------- locked / done / init: sheet stays put -------------
 
         if self.debug:
             self._dbg(token)
+
+    # ------------------------------------------------------------------
+    # Helper: token stream → discrete [col, length] events
+    # ------------------------------------------------------------------
+    def _tokens_to_events(self, tokens):
+        """Walk a token sequence and emit a list of [col, length] events.
+        Leading HOLDs / RESTs are skipped; each NOTE_x starts a new event
+        whose length is 1 + (count of immediately-following HOLDs)."""
+        events = []
+        i, n = 0, len(tokens)
+        while i < n:
+            tok = int(tokens[i])
+            if tok >= TOK_NOTE_BASE:
+                midi = PITCH_LOW + (tok - TOK_NOTE_BASE)
+                col = max(0, midi - self.col_start)
+                length = 1
+                j = i + 1
+                while j < n and int(tokens[j]) == TOK_HOLD:
+                    length += 1
+                    j += 1
+                events.append([col, length])
+                i = j
+            else:
+                i += 1
+        return events
 
     # ------------------------------------------------------------------
     # Convenience read-throughs for the display
@@ -213,8 +302,7 @@ class RealtimeSheet:
         return bars[min(self._bar_at_play_line() + 1, len(bars) - 1)]
 
     # ------------------------------------------------------------------
-    # Optional: convert what the player just played to a human-readable
-    # token name. Useful for HUD overlays / debugging.
+    # Debug helpers
     # ------------------------------------------------------------------
     @staticmethod
     def token_label(token):
@@ -223,7 +311,7 @@ class RealtimeSheet:
             return "REST"
         if t == TOK_HOLD:
             return "HOLD"
-        return f"NOTE_{40 + t - 2}"
+        return f"NOTE_{40 + t - TOK_NOTE_BASE}"
 
     def _dbg(self, token):
         head = self.sheet[self.spawned_count:self.spawned_count + 5]
@@ -231,4 +319,5 @@ class RealtimeSheet:
               f"played={self.token_label(token):<8s} "
               f"action={self.last_action:<9s} "
               f"curr_pitch={self.current_pitch}  "
-              f"sheet[{self.spawned_count}:{self.spawned_count + 5}]={head}")
+              f"sheet_len={len(self.sheet)}  "
+              f"upcoming[{self.spawned_count}:+5]={head}")
