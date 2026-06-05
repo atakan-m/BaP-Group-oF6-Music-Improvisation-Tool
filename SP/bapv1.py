@@ -1,23 +1,23 @@
 import numpy as np
 import sounddevice as sd
-from scipy.signal import butter, sosfilt
+from scipy.signal import butter, sosfilt, find_peaks
 
 # ─────────────────────────── Configuration ───────────────────────────
 SAMPLE_RATE    = 44100
 FFT_SIZE       = 4096      # ~10.8 Hz/bin — good frequency resolution
-HOP_SIZE       = 1024      # callback block size 
+HOP_SIZE       = 512       # ~11.6 ms/callback — 16 callbacks per 16th note @ 80 BPM
 A4_FREQ        = 440.0
-SILENCE_THRESH = 0.005     # RMS gate
+SILENCE_THRESH = 0.015      # tuned for 110 dB SPL mic; bump by 0.005 if sustain sticks
 
 NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
-# Search range: A0 (27.5 Hz) to C8 (4186 Hz)
-LO_HZ, HI_HZ  = 27.5, 4200.0
+# Search range: A0 (27.5 Hz) to C8 (4186 Hz), c2 (65)
+LO_HZ, HI_HZ  = 65, 4200.0
 
-HPS_HARMONICS  = 5    # how many harmonics to fold down
-CONFIRM_FRAMES = 2    # frames a note must be stable before we emit it
-FLUX_HISTORY   = 43   # ~1 s of history for adaptive onset threshold
-FLUX_MULT      = 1.5  # how many × median = onset
+HPS_HARMONICS  = 6    # how many harmonics to fold down
+CONFIRM_FRAMES = 2    # frames a note must be stable before we emit it (~23 ms @ 512 hop)
+FLUX_HISTORY   = 18   # ~0.20 s of history for adaptive onset threshold
+FLUX_MULT      = 2  # slightly lower — onset is now sole trigger so must be reliable
 
 # ─────────────────────── Pre-computed globals ─────────────────────────
 WINDOW  = np.hanning(FFT_SIZE)
@@ -28,8 +28,6 @@ FREQS   = np.fft.rfftfreq(FFT_SIZE, d=1.0 / SAMPLE_RATE)
 _sos   = butter(4, [LO_HZ, HI_HZ], btype="bandpass", fs=SAMPLE_RATE, output="sos")
 
 # ---- Bin indices that bracket our search range -------------------------
-# We search the FULL spectrum with HPS, but only inside [LO_HZ, HI_HZ].
-# Keep these as integer indices into the raw rfft output.
 LO_BIN = int(np.searchsorted(FREQS, LO_HZ))
 HI_BIN = int(np.searchsorted(FREQS, HI_HZ))
 
@@ -60,9 +58,9 @@ def hps(mag_full: np.ndarray, harmonics: int = HPS_HARMONICS) -> np.ndarray:
     max_len = len(mag_full) // harmonics
     product = mag_full[:max_len].copy()
     for h in range(2, harmonics + 1):
-        downsampled = mag_full[::h][:max_len]     # downsample then hard-clip to max_len
+        downsampled = mag_full[::h][:max_len]
         product *= downsampled
-    return product                                 # length = len(mag_full)//harmonics
+    return product  # length = len(mag_full)//harmonics
 
 
 # ──────────────────────────── Detector ───────────────────────────────
@@ -71,8 +69,9 @@ class PureArrayDetector:
         self.buf           = np.zeros(FFT_SIZE, dtype=np.float64)
         self.filter_zi     = np.zeros((_sos.shape[0], 2))
 
-        self.prev_mag = np.zeros(FFT_SIZE // 2 + 1)
+        self.prev_mag_norm = np.zeros(FFT_SIZE // 2 + 1)
         self.flux_hist     = np.zeros(FLUX_HISTORY)
+        self.timeout      = 0
 
         self.last_midi     = None
         self.cand_midi     = None
@@ -87,43 +86,53 @@ class PureArrayDetector:
         return out
 
     # ── onset ─────────────────────────────────────────────────────────
-    def _update_onset(self, mag: np.ndarray) -> bool:
-        flux = float(np.sum(np.maximum(mag - self.prev_mag, 0.0)))
-        self.prev_mag = mag
+    def _update_onset(self, mag_norm: np.ndarray) -> bool:
+        flux = float(np.sum(np.maximum(mag_norm - self.prev_mag_norm, 0.0)))
+        self.prev_mag_norm = mag_norm
         self.flux_hist     = np.roll(self.flux_hist, -1)
         self.flux_hist[-1] = flux
         nonzero = self.flux_hist[self.flux_hist > 0]
-        flux_max = np.max(self.flux_hist)
-        if (flux - np.median(nonzero)) / flux_max < 0.2:
+
+        max_idx = np.argmax(self.flux_hist)
+        max_flux = self.flux_hist[max_idx]
+
+        if  self.timeout > 0 or (max_flux - np.median(nonzero)) / max_flux < 0.7:
+            self.timeout = np.clip(self.timeout - 1, 0, FLUX_HISTORY)
             return False
-        return flux > FLUX_MULT * float(np.median(nonzero))
+        
+        peaks, _ = find_peaks(self.flux_hist, distance= FLUX_HISTORY, prominence= 20)
+        
+        if len(peaks) == 0 or max_idx - 3  > peaks[0] or max_idx + 3  < peaks[0]:
+            return False
+            
+        self.timeout = int(FLUX_HISTORY  * 1.5)
+        return True
 
     # ── pitch ─────────────────────────────────────────────────────────
     def _detect_pitch(self, mag_full: np.ndarray) -> float | None:
         """
-        1. Run HPS on the full spectrum (avoids the masked-index bug).
-        2. Constrain the search to [LO_BIN, HI_BIN] AFTER HPS.
+        1. Run HPS on the full spectrum.
+        2. Constrain the search to [LO_BIN, HI_BIN] after HPS.
         3. Parabolic interpolation on HPS values → fractional bin.
         4. Convert fractional bin → Hz via FREQS.
+        5. Octave correction: if the half-frequency bin dominates, go one octave down.
         """
-        hps_full = hps(mag_full)          # length = FFT_SIZE/2+1 // HPS_HARMONICS
+        hps_full = hps(mag_full)  # length = FFT_SIZE/2+1 // HPS_HARMONICS
 
-        # Translate our Hz limits into HPS-array indices.
-        # hps_full[i] corresponds to FREQS[i] (same indexing, just shorter array).
         lo = max(LO_BIN, 1)
         hi = min(HI_BIN, len(hps_full) - 1)
         if lo >= hi:
             return None
 
-        search_region   = hps_full[lo:hi]
-        local_peak      = int(np.argmax(search_region))
-        global_peak     = local_peak + lo          # index into hps_full / FREQS
+        search_region = hps_full[lo:hi]
+        local_peak    = int(np.argmax(search_region))
+        global_peak   = local_peak + lo       # index into hps_full / FREQS
 
-        refined_bin     = parabolic_interp(hps_full, global_peak)
+        refined_bin   = np.clip(parabolic_interp(hps_full, global_peak), 0, len(FREQS))
 
         # Map fractional bin → Hz (FREQS is linear so lerp is exact)
-        lo_b = int(np.floor(refined_bin))
-        hi_b = min(lo_b + 1, len(FREQS) - 1)
+        lo_b = np.clip(int(np.floor(refined_bin)), 0, len(FREQS) - 1)
+        hi_b = np.clip(min(lo_b + 1, len(FREQS) - 1), 0, len(FREQS) - 1)
         frac = refined_bin - lo_b
         freq_hz = FREQS[lo_b] * (1 - frac) + FREQS[hi_b] * frac
 
@@ -132,16 +141,17 @@ class PureArrayDetector:
             return None
 
         # ── Octave correction ──────────────────────────────────────────
-        # HPS commonly locks onto the sub-harmonic (one octave too low).
-        # If the octave-up bin has > 30% of the peak's energy, prefer it.
-        peak_bin   = int(round(refined_bin))
-        double_bin = peak_bin * 2
-        if double_bin < len(mag_full):
-            if mag_full[double_bin] > 0.3 * mag_full[peak_bin]:
-                double_freq = freq_hz * 2
-                double_midi = freq_to_midi(double_freq)
-                if 21 <= double_midi <= 108:
-                    freq_hz = double_freq
+        # HPS can lock onto the first sub-harmonic (one octave too high).
+        # If the half-frequency bin has substantially more energy than the
+        # detected peak, prefer the octave down.
+        peak_bin = int(round(refined_bin))
+        half_bin = peak_bin // 2
+        if half_bin >= 1:
+            if mag_full[half_bin] > 0.6 * mag_full[peak_bin]:
+                half_freq = freq_hz / 2
+                half_midi = freq_to_midi(half_freq)
+                if 21 <= half_midi <= 108:
+                    freq_hz = half_freq
         # ──────────────────────────────────────────────────────────────
 
         return freq_hz
@@ -150,15 +160,6 @@ class PureArrayDetector:
     def callback(self, indata, frames, time_info, status):
         block = np.mean(indata, axis=1).astype(np.float64)
         
-        # Silence gate
-        rms = float(np.sqrt(np.mean(block ** 2)))
-        # # print(int(rms))
-        if rms < SILENCE_THRESH:
-            self.last_midi  = None
-            self.cand_midi  = None
-            self.cand_count = 0
-            return
-
         # Filter → ring buffer
         filtered = self._filter(block)
         self.buf  = np.roll(self.buf, -HOP_SIZE)
@@ -167,14 +168,14 @@ class PureArrayDetector:
         # FFT — full magnitude (not masked)
         mag_full = np.abs(np.fft.rfft(self.buf * WINDOW))
 
-        # Normalised magnitude for onset (loudness-independent)
-        # mag_norm = mag_full / (mag_full.max() + 1e-60)
         onset    = self._update_onset(mag_full)
 
         # Pitch
         freq_hz = self._detect_pitch(mag_full)
+        
         if freq_hz is None:
-            return
+            freq_hz = 0
+            onset = False
 
         midi = freq_to_midi(freq_hz)
         note = midi_to_name(midi)
@@ -188,8 +189,9 @@ class PureArrayDetector:
         if self.cand_count < CONFIRM_FRAMES:
             return
 
-        # Emit on change or onset
-        if midi != self.last_midi or onset:
+        # Emit only on confirmed onset — spectral flux is the sole trigger.
+        # midi change alone (e.g. sustain drift) is not enough to emit.
+        if onset:
             if self.last_midi is not None and 21 <= self.last_midi <= 108:
                 self.keyboard[self.last_midi - 21] = 0
             self.last_midi = midi
@@ -199,14 +201,13 @@ class PureArrayDetector:
             if 21 <= midi <= 108:
                 self.keyboard[midi - 21] = 1
 
-            marker = "* " if onset else "  "
-            print(f"{marker}{freq_hz:.2f} Hz  →  {note:<4}  "
+            print(f"* {freq_hz:.2f} Hz  →  {note:<4}  "
                   f"MIDI {midi:3d}  |  {' '.join(self.melody)}")
 
 
 # ────────────────────────────── Main ─────────────────────────────────
 def main():
-    det = PureArrayDetector() 
+    det = PureArrayDetector()
     print(f"Listening …  FFT={FFT_SIZE}  hop={HOP_SIZE}  "
           f"HPS harmonics={HPS_HARMONICS}  Ctrl-C to stop\n")
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=2,
@@ -214,9 +215,9 @@ def main():
                         callback=det.callback):
         try:
             while True:
-                sd.sleep(500)
+                sd.sleep(100)
         except KeyboardInterrupt:
             print("\nStopped.")
 
 if __name__ == "__main__":
-    main()  
+    main()
