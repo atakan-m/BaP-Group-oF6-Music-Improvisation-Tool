@@ -221,6 +221,10 @@ class JazzImprov:
         self._rollout_next_tick = 0
         self._locked_ticks = 0
         self._current_pitch = DEFAULT_CURRENT_PITCH
+        # Pitch the player was on *before* the most recent pitch change. Lets
+        # the deviation check tolerate a late attack (playing the previous
+        # note one tick after the engine has moved on).
+        self._prev_pitch = DEFAULT_CURRENT_PITCH
         self.last_action = "init"   # "match" | "silence" | "deviation" | "locked" | "done" | "init"
 
     # ------------------------------------------------------------------
@@ -279,6 +283,7 @@ class JazzImprov:
         self._rollout_next_tick = 0
         self._locked_ticks = 0
         self._current_pitch = DEFAULT_CURRENT_PITCH
+        self._prev_pitch = DEFAULT_CURRENT_PITCH
         self.last_action = "init"
         self._refresh_rollout()
 
@@ -325,7 +330,20 @@ class JazzImprov:
 
     def _update_current_pitch(self, tok):
         if int(tok) >= TOK_NOTE_BASE:
-            self._current_pitch = PITCH_LOW + (int(tok) - TOK_NOTE_BASE)
+            new_pitch = PITCH_LOW + (int(tok) - TOK_NOTE_BASE)
+            if new_pitch != self._current_pitch:
+                self._prev_pitch = self._current_pitch
+                self._current_pitch = new_pitch
+
+    def _next_expected_pitch(self):
+        """First pitch in the rollout that DIFFERS from current_pitch — i.e.
+        the next pitch change the model is planning. Used by the deviation
+        check to tolerate an early attack of the next note."""
+        for tok in self._rollout_buf:
+            p = self._token_to_pitch(tok)
+            if p != self._current_pitch:
+                return p
+        return None
 
     # ------------------------------------------------------------------
     # Rollout machinery — all three paths funnel through `_sample_n`
@@ -471,7 +489,19 @@ class JazzImprov:
             expected_pitch = (self._token_to_pitch(self._rollout_buf[0])
                               if self._rollout_buf else None)
             played_pitch = self._token_to_pitch(played)
-            matched = played_pitch == expected_pitch
+            # Full-note tolerance buffer: a played pitch is considered a
+            # match if it equals any of:
+            #   * current expected pitch (the planned note right now),
+            #   * previous pitch        (player attacked one tick late),
+            #   * next expected pitch   (player attacked one tick early).
+            # This stops the engine from re-planning when the player is just
+            # slightly off-beat on a note that's still in the song.
+            next_pitch = self._next_expected_pitch()
+            matched = (
+                played_pitch == expected_pitch
+                or played_pitch == self._prev_pitch
+                or (next_pitch is not None and played_pitch == next_pitch)
+            )
 
         self._advance_persistent(played)
         self._update_current_pitch(played)
