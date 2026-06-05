@@ -18,7 +18,7 @@ HOP_SIZE    = signalprocessing.HOP_SIZE        # 512 = ~11.6 ms/callback
 WIDTH = 36
 HEIGHT = 20
 fps = 60
-bpm = 60
+bpm = 30
 Testing_variable_for_testing = (fps*fps//bpm//4)
 speed = 1/Testing_variable_for_testing
 
@@ -29,40 +29,21 @@ hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1]
 
 # 17-row pre-roll buffer: 16 silent + 1 anchor so the play line settles before
-# the engine starts committing.
-buffer_sheet = [
-    [0]*36, [0]*36, [0]*36, [0]*36, [0]*36, [0]*36, [0]*36, [0]*36,
-    [0]*36, [0]*36, [0]*36, [0]*36, [0]*36, [0]*36, [0]*36, [0]*36,
-    [1 if c == 17 else 0 for c in range(36)],
-]
+# the engine starts committing. Each "row" is the column index of the single
+# note at that tick, or None for silence — we're monophonic, so storing one
+# int per tick is enough (no need for a 36-wide bitmask).
+buffer_sheet = [None] * 16 + [17]
 
 col_start = 48                       # MIDI 48 = C3 → column 0
 
 
-def note_to_col(note):
-    return note - col_start
+def midi_to_col(midi):
+    """MIDI pitch → column index 0..35, or None if out of the visible range."""
+    col = midi - col_start
+    return col if 0 <= col < 36 else None
 
 
-def notes_in_row(notes, num_cols=36):
-    """A single 16th-note display row. `notes` is a tuple/list with one
-    pitch; we set the bit at that pitch's column.
-
-    col_start=48 → col=0 means MIDI 48 (C3). Use row[col] (not row[col-1])
-    so the dot aligns with the C-labeled visual column at position 0 —
-    the old `row[col-1]` was off by a semitone.
-    """
-    row = [0]*num_cols
-    col = note_to_col(notes[0])
-    if 0 <= col < num_cols:
-        row[col] = 1
-    return row
-
-
-def make_sheet(notes, num_cols=36):
-    return [notes_in_row(note, num_cols) for note in notes]
-
-
-# 36 column rendering positions — one per semitone column 0..35.
+# 36 column labels — one per semitone column 0..35.
 Note_list = [
     "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
     "C","C#","D","D#","E","F","F#","G","G#","A","A#","B",
@@ -70,18 +51,11 @@ Note_list = [
 ]
 
 
-def _row_to_col(row):
-    """Find the column index of the (single) set bit in a display row,
-    or None if the row is silent."""
-    for i, v in enumerate(row):
-        if v:
-            return i
-    return None
-
-
 class Figure:
-    """One Figure per 16th-note tick. Carries the tick index it was spawned
-    from so the realtime engine can find and re-render it after a deviation.
+    """One Figure per 16th-note tick. Stores just a column index (or None
+    for silence) plus the tick it was spawned from. The source_idx lets the
+    realtime engine find this figure and replace its column after a model
+    re-plan — without it only future spawns would visibly change.
 
     On screen the per-tick figures get visually grouped into variable-length
     rectangles by the rendering pass at the bottom of the main loop, so a
@@ -89,48 +63,43 @@ class Figure:
     discrete-event design, but with the per-tick model that realtime needs.
     """
 
-    def __init__(self, Notes, source_idx=None):
+    def __init__(self, col, source_idx=None):
         self.x = 0
         self.y = 0
-        # Tick index this figure was spawned from. After a model re-plan
-        # we use this to figure out which rollout slot replaces this
-        # figure's image — without it, only future spawns would change.
         self.source_idx = source_idx
-        self.tune = Notes
-        self._col_idx = _row_to_col(Notes)
-        self._note_name = Note_list[self._col_idx] if self._col_idx is not None else ""
+        self._col_idx = col
+        self._note_name = Note_list[col] if col is not None else ""
 
     @property
     def col_idx(self):
-        """0..35, or None for a silent row."""
+        """0..35, or None for a silent tick."""
         return self._col_idx
 
     @property
     def note_name(self):
         return self._note_name
 
-    def update_image(self, Notes):
-        """Re-render this figure from a new row. Called after the engine
-        re-plans on deviation so figures already scrolling toward the play
-        line visibly reflect the new plan instead of the old one — this is
-        the single line that makes realtime *visible* near the play line."""
-        self.tune = Notes
-        self._col_idx = _row_to_col(Notes)
-        self._note_name = Note_list[self._col_idx] if self._col_idx is not None else ""
+    def update_image(self, col):
+        """Replace this figure's column after the engine re-plans on a
+        deviation, so figures already scrolling toward the play line visibly
+        reflect the new plan. THIS is what makes realtime *visible* near the
+        play line."""
+        self._col_idx = col
+        self._note_name = Note_list[col] if col is not None else ""
 
 
 class Music:
     def __init__(self, height, width):
         self.x = 40
         self.y = 40
-        self.zoom = 33.333333
+        self.zoom = 50
         self.figure = deque()
         self.beat_bars = [0]
         self.height = height
         self.width = width
 
-    def new_figure(self, bar, source_idx=None):
-        self.figure.append(Figure(bar, source_idx=source_idx))
+    def new_figure(self, col, source_idx=None):
+        self.figure.append(Figure(col, source_idx=source_idx))
 
     def new_beatbar(self):
         self.beat_bars.append(0)
@@ -151,13 +120,13 @@ for chord in Buttons_v2.main():
 
 engine = generate.make_realtime_engine(
     chord_prog_2,
-    total_bars=64,
+    total_bars=16,
     # ↓↓↓  PER-RUN TUNING (model file lives at ML/models/jazz_lstm.pt;
     #      to switch models, edit DEFAULT_CHECKPOINT in ML/engine.py)  ↓↓↓
-    temperature=0.45,            # 0.4 ballad, 0.8 bebop
+    temperature=0.9,            # 0.4 ballad, 0.8 bebop
     rollout_ticks=30,            # ~5.6s of lookahead — covers display window
     deviation_lock_ticks=4,      # quarter-note lock after a deviation
-    hold_penalty=0.7,            # +ve → shorter notes, −ve → longer
+    hold_penalty=1.0,            # +ve → shorter notes, −ve → longer
     rest_penalty=1.5,            # suppress silence
     max_consec_holds=4,          # hard cap → notes never exceed a quarter
 )
@@ -166,19 +135,20 @@ engine = generate.make_realtime_engine(
 DEBUG_REALTIME = True
 
 # ─────────────────────── Display rendering helpers ────────────────────
-# Token sequence → 36-col display rows. REST/HOLD reuse the previous pitch
-# (because notes_in_row always sets one bit, there's no way to draw rest).
-# Stateless: pass the prev pitch in and back out so we can re-render the
-# future on every commit without corrupting a global.
+# Token sequence → per-tick column indices. REST/HOLD reuse the previous
+# pitch (monophonic display can't draw "rest" without a special marker, so
+# we just hold the previous pitch's column). Stateless: pass the prev pitch
+# in and back out so we can re-render the future on every commit without
+# corrupting a global.
 PITCH_LOW_DISPLAY  = 48              # MIDI 48 = C3
 PITCH_HIGH_DISPLAY = 83              # MIDI 83 = B5
 DEFAULT_DISPLAY_PITCH = 60
 
 
 def render_tokens(tokens, start_prev_midi):
-    """Render a token stream into display rows.
-    Returns (rows, final_prev_midi)."""
-    rows = []
+    """Render a token stream into column indices.
+    Returns (cols, final_prev_midi)."""
+    cols = []
     prev = start_prev_midi
     for tok in tokens:
         tok = int(tok)
@@ -187,15 +157,15 @@ def render_tokens(tokens, start_prev_midi):
             if midi < PITCH_LOW_DISPLAY:  midi = PITCH_LOW_DISPLAY
             if midi > PITCH_HIGH_DISPLAY: midi = PITCH_HIGH_DISPLAY
             prev = midi
-        rows.append(notes_in_row((prev,), 36))
-    return rows, prev
+        cols.append(midi_to_col(prev))
+    return cols, prev
 
 
 # Pre-fill the displayable sheet with the engine's initial rollout so the
 # player has notes to read during the pre-roll period.
 initial_rollout = engine.rollout()
-sheet, _prev_chain_midi = render_tokens(initial_rollout, DEFAULT_DISPLAY_PITCH)
-total_sheet = buffer_sheet + sheet
+initial_cols, _prev_chain_midi = render_tokens(initial_rollout, DEFAULT_DISPLAY_PITCH)
+total_sheet = buffer_sheet + initial_cols    # list of int|None, one per tick
 
 
 # ─────────────────────── Mic → tick aggregator ────────────────────────
@@ -238,7 +208,7 @@ def chord_upcoming(tally):
 
 
 # ────────────────────────── Pygame setup ──────────────────────────────
-real_pos = [40 + 33.333 * hor_pos[p] * 36/21 + 2 for p in range(37)]
+real_pos = [40 + 50 * hor_pos[p] * 36/21 + 2 for p in range(37)]
 
 pygame.init()
 print(" starting ")
@@ -248,8 +218,8 @@ WHITE = (255, 255, 255)
 GRAY = (128, 128, 128)
 RED = (255, 0, 0)
 
-size = (1280, 720)
-screen = pygame.display.set_mode(size, vsync=1)
+size = (1920, 1080)
+screen = pygame.display.set_mode(size, pygame.FULLSCREEN, vsync=1)
 font  = pygame.font.SysFont('Calibri', 40, True, False)
 font1 = pygame.font.SysFont('Calibri', 50, True, False)
 pygame.display.set_caption("Jazz")
@@ -334,11 +304,11 @@ while not done:
                 # Render the FULL rollout in one pass so the prev-pitch chain
                 # for HOLD/REST is consistent. `engine.current_pitch` anchors
                 # the start (post-deviation that's the deviation note, not
-                # whatever stale pitch the previous on-screen row held).
+                # whatever stale pitch the previous on-screen tick held).
                 spawn_prev = (engine.current_pitch
                               if engine.current_pitch is not None
                               else DEFAULT_DISPLAY_PITCH)
-                all_rendered, _ = render_tokens(rollout, spawn_prev)
+                rollout_cols, _ = render_tokens(rollout, spawn_prev)
 
                 # --- (a) UPDATE ON-SCREEN FIGURES with rollout[0..13].
                 # A figure with source_idx S is at y = tally - 1 - S right
@@ -349,17 +319,17 @@ while not done:
                     if fig.source_idx is None:
                         continue
                     k = fig.source_idx - tally + 14
-                    if 0 <= k < 14 and k < len(all_rendered):
-                        fig.update_image(all_rendered[k])
+                    if 0 <= k < 14 and k < len(rollout_cols):
+                        fig.update_image(rollout_cols[k])
 
                 # --- (b) REPLACE / EXTEND total_sheet from rollout[14:]
                 # for upcoming spawns at this and future boundaries.
-                for offs, row in enumerate(all_rendered[14:]):
+                for offs, col in enumerate(rollout_cols[14:]):
                     idx = tally + offs
                     if idx < len(total_sheet):
-                        total_sheet[idx] = row
+                        total_sheet[idx] = col
                     else:
-                        total_sheet.append(row)
+                        total_sheet.append(col)
 
         if tally < len(total_sheet):
             game.new_figure(total_sheet[tally], source_idx=tally)
