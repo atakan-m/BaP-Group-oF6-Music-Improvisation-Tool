@@ -14,9 +14,9 @@ NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 # Search range: A0 (27.5 Hz) to C8 (4186 Hz), c2 (65)
 LO_HZ, HI_HZ  = 65, 4200.0
 
-HPS_HARMONICS  = 6    # how many harmonics to fold down
+HPS_HARMONICS  = 5    # how many harmonics to fold down
 CONFIRM_FRAMES = 2    # frames a note must be stable before we emit it (~23 ms @ 512 hop)
-FLUX_HISTORY   = 18   # ~0.20 s of history for adaptive onset threshold
+FLUX_HISTORY   = 10   # ~0.20 s of history for adaptive onset threshold
 FLUX_MULT      = 2  # slightly lower — onset is now sole trigger so must be reliable
 
 # ─────────────────────── Pre-computed globals ─────────────────────────
@@ -66,7 +66,7 @@ def hps(mag_full: np.ndarray, harmonics: int = HPS_HARMONICS) -> np.ndarray:
 # ──────────────────────────── Detector ───────────────────────────────
 class PureArrayDetector:
     def __init__(self):
-        self.buf           = np.zeros(FFT_SIZE, dtype=np.float64)
+        self.buf           = np.zeros(FFT_SIZE, dtype=np.float32)
         self.filter_zi     = np.zeros((_sos.shape[0], 2))
 
         self.prev_mag_norm = np.zeros(FFT_SIZE // 2 + 1)
@@ -97,7 +97,7 @@ class PureArrayDetector:
         max_flux = self.flux_hist[max_idx]
 
         if  self.timeout > 0 or (max_flux - np.median(nonzero)) / max_flux < 0.7:
-            self.timeout = np.clip(self.timeout - 1, 0, FLUX_HISTORY)
+            self.timeout = np.clip(self.timeout - 1, 0, FLUX_HISTORY * 1.5)
             return False
         
         peaks, _ = find_peaks(self.flux_hist, distance= FLUX_HISTORY, prominence= 20)
@@ -158,11 +158,11 @@ class PureArrayDetector:
 
     # ── callback ──────────────────────────────────────────────────────
     def callback(self, indata, frames, time_info, status):
-        block = np.mean(indata, axis=1).astype(np.float64)
+        block = np.mean(indata, axis=1)
         
         # Filter → ring buffer
         filtered = self._filter(block)
-        self.buf  = np.roll(self.buf, -HOP_SIZE)
+        self.buf[:-HOP_SIZE] = self.buf[HOP_SIZE:]
         self.buf[-HOP_SIZE:] = filtered
 
         # FFT — full magnitude (not masked)
@@ -196,7 +196,7 @@ class PureArrayDetector:
                 self.keyboard[self.last_midi - 21] = 0
             self.last_midi = midi
 
-            self.melody    = np.roll(self.melody, -1)
+            self.melody[:-1] = self.buf[1:]
             self.melody[-1] = note
             if 21 <= midi <= 108:
                 self.keyboard[midi - 21] = 1
