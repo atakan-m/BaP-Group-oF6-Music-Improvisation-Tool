@@ -12,6 +12,7 @@ import json
 import signalprocessing             # SP/ — pitch detector
 import Buttons_v2
 import sounddevice as sd
+from perf import PerfLogger          # ML/perf.py — realtime timing buckets
 
 SAMPLE_RATE = signalprocessing.SAMPLE_RATE     # 44100
 HOP_SIZE    = signalprocessing.HOP_SIZE        # 512 = ~11.6 ms/callback
@@ -133,6 +134,30 @@ engine = generate.make_realtime_engine(
 
 # Set True for per-tick commit + match/deviation logs in the terminal.
 DEBUG_REALTIME = True
+
+# ─────────────────────── Realtime perf logging ────────────────────────
+# Times each engine.commit() call and buckets by the engine's last_action
+# ("match" / "silence" / "deviation" / "locked"). Deviation commits are
+# the spike — they trigger _build_deviation_rollout which does up to
+# rollout_ticks LSTM forwards in a row. On the Pi these are the calls
+# that cause tick drift if performance is too tight, so they're the
+# numbers worth watching.
+#
+# Settings:
+#   PERF_PRINT_EVERY_N_TICKS — how often to print a summary table
+#                              (set to 0 to disable periodic prints).
+#   PERF_RECENT_WINDOW      — periodic prints summarise the last N
+#                              samples per bucket (so you see what
+#                              perf is doing *now*, not the all-time
+#                              average).
+#   PERF_CSV_ON_QUIT        — dump every raw sample to this CSV when
+#                              you quit (set to None to skip).
+PERF_PRINT_EVERY_N_TICKS = 100
+PERF_RECENT_WINDOW       = 100
+PERF_CSV_ON_QUIT         = "commit_timings.csv"
+
+perf_commit     = PerfLogger("engine.commit")
+perf_tick_block = PerfLogger("full_tick_block")
 
 # ─────────────────────── Display rendering helpers ────────────────────
 # Token sequence → per-tick column indices. REST/HOLD reuse the previous
@@ -285,9 +310,24 @@ while not done:
         #   4. update_image on-screen figures from rollout[0..13]. THIS
         #      is what makes deviations VISIBLE near the play line.
         # ──────────────────────────────────────────────────────────────
+        # Sentinel — set only if we actually start the tick-block timer.
+        # `tally` is incremented later in this if-branch, so we can't rely
+        # on the same `tally >= 31` check at both ends.
+        _t_block = None
         if not engine.is_done and tally >= 31:
+            # Wrap the whole tick block so we can compare engine.commit
+            # cost vs. everything else (render + figure updates).
+            _t_block = perf_tick_block.start()
+
             played_token = get_played_token()
+
+            # The expensive call — bucket by what kind of commit it ended
+            # up being (deviation = up to rollout_ticks LSTM forwards;
+            # match/silence = 2 forwards; locked = 1 forward).
+            _t_commit = perf_commit.start()
             rollout = engine.commit(played_token)
+            commit_ms = perf_commit.stop(_t_commit, engine.last_action)
+
             if DEBUG_REALTIME:
                 if played_token == 0:
                     played_str = "REST"
@@ -299,6 +339,7 @@ while not done:
                 print(f"[t={tally:>4d}] played={played_str:<8s} "
                       f"curr_pitch={engine.current_pitch}  "
                       f"action={engine.last_action:<9s}  "
+                      f"commit={commit_ms:>6.1f}ms  "
                       f"buf[0:5]={buf_preview}")
             if rollout:
                 # Render the FULL rollout in one pass so the prev-pitch chain
@@ -338,6 +379,24 @@ while not done:
             game.figure.popleft()
         if len(game.figure) != 0 and game.figure[0].col_idx is None:
             game.figure.popleft()
+
+        # Close out the whole-tick timer (covers commit + render + figure
+        # update + sheet extension + spawn). Gated on the sentinel rather
+        # than `tally >= 31` because `tally` may have just been incremented.
+        if _t_block is not None:
+            perf_tick_block.stop(_t_block, engine.last_action)
+
+        # Periodic perf summary — useful on the Pi where you want to see
+        # whether deviation spikes are still inside the 16th-note budget
+        # (≈107 ms at 140 BPM; ≈250 ms at 60 BPM).
+        if (PERF_PRINT_EVERY_N_TICKS
+                and tally >= 31
+                and tally % PERF_PRINT_EVERY_N_TICKS == 0):
+            tick_budget_ms = 60_000.0 / bpm / 4
+            print(f"\n  16th-note budget at {bpm} BPM = {tick_budget_ms:.1f} ms")
+            perf_commit.print_summary(recent_n=PERF_RECENT_WINDOW)
+            perf_tick_block.print_summary(recent_n=PERF_RECENT_WINDOW,
+                                          header=False)
 
     if counter % (Testing_variable_for_testing * 16) == 0:
         game.new_beatbar()
@@ -434,5 +493,20 @@ while not done:
 
     pygame.display.flip()
     clock.tick(fps)
+
+# ───────────────────── Perf summary + CSV on quit ─────────────────────
+print("\n" + "=" * 60)
+print("FINAL PERF SUMMARY")
+print("=" * 60)
+print(f"16th-note budget at {bpm} BPM = {60_000.0 / bpm / 4:.1f} ms")
+perf_commit.print_summary()
+perf_tick_block.print_summary(header=False)
+
+if PERF_CSV_ON_QUIT:
+    perf_commit.save_csv(PERF_CSV_ON_QUIT)
+    summary_path = PERF_CSV_ON_QUIT.replace(".csv", "_summary.csv")
+    perf_commit.save_summary_csv(summary_path)
+    print(f"\nWrote raw samples → {PERF_CSV_ON_QUIT}")
+    print(f"Wrote bucket summary → {summary_path}")
 
 pygame.quit()
