@@ -192,11 +192,20 @@ class JazzImprov:
                  rollout_ticks=30, deviation_lock_ticks=1,
                  hold_penalty=1.0, rest_penalty=1.5,
                  max_consec_holds=None,
+                 deviation_initial_fresh=2,
+                 rollout_extend_per_tick=4,
                  seed=0, device="cpu"):
         self.model = model
         self.device = torch.device(device)
         self.deviation_lock_ticks = int(deviation_lock_ticks)
         self.rollout_ticks = int(rollout_ticks)
+        # Amortise the deviation cost: build only this many fresh tokens on
+        # deviation (instead of the full rollout_ticks-n_lock), then extend
+        # by `rollout_extend_per_tick` each subsequent commit until the
+        # rollout is back at target length. Trades a few ticks of partial
+        # visual lookahead for a much smaller per-tick LSTM spike.
+        self.deviation_initial_fresh = int(deviation_initial_fresh)
+        self.rollout_extend_per_tick = int(rollout_extend_per_tick)
 
         self._rng = np.random.default_rng(seed)
         self._sample = make_sampler(
@@ -391,10 +400,60 @@ class JazzImprov:
             self._rollout_next_tick += 1
 
     @torch.no_grad()
-    def _build_deviation_rollout(self, n_lock):
-        """Rebuild rollout starting with `n_lock` forced HOLDs (visual sustain
-        of the deviation note) followed by fresh predictions sampled from a
-        state that has been simulated forward through those HOLDs."""
+    def _extend_rollout_by_n(self, n):
+        """Append `n` new predictions at the end of the rollout in one
+        batched _sample_n call. Used by the catchup path after a deviation
+        to gradually refill the rollout."""
+        if n <= 0 or self._rollout_next_tick >= self.total_ticks:
+            return
+        n = min(n, self.total_ticks - self._rollout_next_tick)
+        consec = self._count_trailing_holds(self._rollout_buf)
+        tokens, h, prev, _ = self._sample_n(
+            self._h_rollout, self._prev_rollout_tok, n,
+            self._rollout_next_tick, consec,
+        )
+        if tokens:
+            self._rollout_buf.extend(tokens)
+            self._h_rollout = h
+            self._prev_rollout_tok = prev
+            self._rollout_next_tick += len(tokens)
+
+    def _catchup_extend(self):
+        """Top up the rollout toward target length by at most
+        `rollout_extend_per_tick` tokens. Called from match / silence /
+        locked commit paths so a deviation that built only a tiny initial
+        rollout gradually refills over the following ticks instead of
+        making one huge spike."""
+        deficit = self.rollout_ticks - len(self._rollout_buf)
+        if deficit <= 0:
+            return
+        self._extend_rollout_by_n(min(deficit, self.rollout_extend_per_tick))
+
+    @torch.no_grad()
+    def _build_deviation_rollout(self, n_lock, initial_fresh=None):
+        """Rebuild rollout starting with `n_lock` forced HOLDs followed by
+        a small number of fresh predictions. The rest of the rollout is
+        filled in gradually by `_catchup_extend` over subsequent ticks so
+        the deviation tick itself doesn't have to do all rollout_ticks
+        LSTM forwards in one go.
+
+        Args:
+          n_lock        : how many forced-HOLD ticks to simulate up front
+                          (visual sustain of the deviation note).
+          initial_fresh : how many predicted tokens to sample on top of the
+                          lock. Defaults to self.deviation_initial_fresh.
+                          Pass `self.rollout_ticks - n_lock` for the old
+                          "build the full rollout right away" behaviour.
+        """
+        if initial_fresh is None:
+            initial_fresh = self.deviation_initial_fresh
+        # Don't sample past the song's end.
+        initial_fresh = max(0, min(
+            initial_fresh,
+            self.total_ticks - (self.current_tick + n_lock),
+            self.rollout_ticks - n_lock,
+        ))
+
         h = self._clone_hidden(self.h_persistent)
         prev = self.prev_actual
         # Advance through (deviation_note, HOLD, HOLD, …) without sampling
@@ -405,14 +464,16 @@ class JazzImprov:
                 break
             _, h = self._forward_one(prev, t, h)
             prev = TOK_HOLD
-        # Then sample the remainder. Consec_holds starts at n_lock so the
-        # max-consec cap sees the forced HOLDs as part of the chain.
+        # Then sample only `initial_fresh` tokens. Consec_holds starts at
+        # n_lock so the max-consec cap sees the forced HOLDs as part of
+        # the chain.
         new_buf = [TOK_HOLD] * n_lock
-        fresh, h, prev, _ = self._sample_n(
-            h, prev, self.rollout_ticks - n_lock,
-            self.current_tick + n_lock, consec_holds=n_lock,
-        )
-        new_buf.extend(fresh)
+        if initial_fresh > 0:
+            fresh, h, prev, _ = self._sample_n(
+                h, prev, initial_fresh,
+                self.current_tick + n_lock, consec_holds=n_lock,
+            )
+            new_buf.extend(fresh)
         self._rollout_buf = new_buf
         self._h_rollout = h
         self._prev_rollout_tok = prev
@@ -475,6 +536,8 @@ class JazzImprov:
             if self._rollout_buf:
                 self._rollout_buf.pop(0)
             self._extend_rollout_by_one()
+            # Spread leftover deviation work across the lock period.
+            self._catchup_extend()
             self._locked_ticks -= 1
             self.last_action = "locked"
             return list(self._rollout_buf)
@@ -509,11 +572,16 @@ class JazzImprov:
         if matched:
             self._rollout_buf.pop(0)
             self._extend_rollout_by_one()
+            # Top up the rollout if a recent deviation built a short one.
+            # No-op once we're back at target length.
+            self._catchup_extend()
             if self.last_action != "silence":
                 self.last_action = "match"
         else:
             # Deviation: persistent state was already advanced above, just
-            # (re)build the rollout from there and arm the lock.
+            # (re)build the rollout from there and arm the lock. Builds
+            # only `deviation_initial_fresh` fresh tokens; the rest will be
+            # filled in by _catchup_extend over subsequent commits.
             n_lock = max(0, self.deviation_lock_ticks - 1)
             self._build_deviation_rollout(n_lock)
             self._locked_ticks = n_lock
@@ -547,6 +615,8 @@ def make_engine(chord_progression, *,
                 deviation_lock_ticks=1,
                 hold_penalty=1.0, rest_penalty=1.5,
                 max_consec_holds=None,
+                deviation_initial_fresh=2,
+                rollout_extend_per_tick=4,
                 checkpoint_path=None, vocab_path=None,
                 quantize=True, jit=False,
                 seed=None, device="cpu"):
@@ -555,6 +625,12 @@ def make_engine(chord_progression, *,
     Default `quantize=True` applies int8 dynamic quantization for fast Pi
     inference (~3x speedup, no measurable quality loss). Set False to keep
     full fp32. Set `jit=True` to additionally TorchScript-compile.
+
+    `deviation_initial_fresh` + `rollout_extend_per_tick` control how the
+    deviation cost is spread: on a deviation the rollout is rebuilt with
+    only `deviation_initial_fresh` fresh tokens (plus the lock HOLDs),
+    then each subsequent commit extends by up to `rollout_extend_per_tick`
+    more until the rollout is back at `rollout_ticks` length.
     """
     checkpoint_path = checkpoint_path or DEFAULT_CHECKPOINT
     vocab_path      = vocab_path      or _VOCAB_PATH
@@ -576,6 +652,8 @@ def make_engine(chord_progression, *,
         deviation_lock_ticks=deviation_lock_ticks,
         hold_penalty=hold_penalty, rest_penalty=rest_penalty,
         max_consec_holds=max_consec_holds,
+        deviation_initial_fresh=deviation_initial_fresh,
+        rollout_extend_per_tick=rollout_extend_per_tick,
         seed=seed, device=device,
     )
     eng.set_progression(list(chord_progression), total_bars=total_bars,

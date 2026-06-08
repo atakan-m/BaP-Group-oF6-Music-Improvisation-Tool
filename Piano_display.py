@@ -130,6 +130,21 @@ engine = generate.make_realtime_engine(
     hold_penalty=1.0,            # +ve → shorter notes, −ve → longer
     rest_penalty=1.5,            # suppress silence
     max_consec_holds=4,          # hard cap → notes never exceed a quarter
+    # ── DEVIATION COST AMORTISATION ────────────────────────────────────
+    # On a deviation we used to do ~rollout_ticks LSTM forwards in one
+    # tick (the spike you saw in the perf log). Now we only build a short
+    # rollout up front (the lock HOLDs + `deviation_initial_fresh` fresh
+    # tokens) and let subsequent commits extend it by up to
+    # `rollout_extend_per_tick` until back at rollout_ticks length.
+    #   * deviation_initial_fresh=2 → deviation tick ≈ 1 advance + 3 lock
+    #     simulation + 2 sample = ~6 LSTM forwards.
+    #   * rollout_extend_per_tick=4 → catch-up commits do ~2 normal + 4
+    #     catch-up = ~6 forwards, for ~6 ticks until refilled.
+    # Visual trade-off: right after deviation the new-plan figures only
+    # appear close to the play line at first; the wave of change
+    # propagates outward as the rollout grows.
+    deviation_initial_fresh=2,
+    rollout_extend_per_tick=4,
 )
 
 # Set True for per-tick commit + match/deviation logs in the terminal.

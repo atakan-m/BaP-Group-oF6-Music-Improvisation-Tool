@@ -26,10 +26,12 @@ from model import JazzLSTM
 
 
 DATA_DIR  = os.path.join("ML", "data", "processed")
-# Where to save the trained checkpoint. Inference reads this same path by
-# default (see engine.py's DEFAULT_CHECKPOINT). To train multiple models
-# without overwriting, change the filename here, e.g. "jazz_lstm_v2.pt".
-CKPT_PATH = os.path.join("ML", "models", "jazz_lstm.pt")
+MODELS_DIR = os.path.join("ML", "models")
+# Default checkpoint filename. Override per-run with `--out <name>.pt`
+# (filename only — it's always written under ML/models/). Inference reads
+# the path in engine.py's DEFAULT_CHECKPOINT, so to use a model you just
+# trained you point that constant at the matching file.
+DEFAULT_CKPT_NAME = "jazz_lstm_v2.pt"
 
 
 # ---------------------------------------------------------------
@@ -113,7 +115,11 @@ def main():
     ap.add_argument("--dropout",         type=float, default=0.1)
     ap.add_argument("--seed",            type=int,   default=42)
     ap.add_argument("--device",          default=None)
+    ap.add_argument("--out",             default=DEFAULT_CKPT_NAME,
+                    help="Output checkpoint filename (saved under ML/models/). "
+                         f"Default: {DEFAULT_CKPT_NAME}")
     args = ap.parse_args()
+    ckpt_path = os.path.join(MODELS_DIR, args.out)
 
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
@@ -141,7 +147,7 @@ def main():
     )
     loss_fn = nn.CrossEntropyLoss()
 
-    os.makedirs(os.path.dirname(CKPT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
     t0 = time.time()
     for ep in range(args.epochs):
         model.train()
@@ -170,9 +176,9 @@ def main():
             "n_layers":    args.n_layers,
             "dropout":     args.dropout,
             "epoch":       ep + 1,
-        }, CKPT_PATH)
+        }, ckpt_path)
 
-    print(f"\ndone. checkpoint at {CKPT_PATH}")
+    print(f"\ndone. checkpoint at {ckpt_path}")
 
 
 if __name__ == "__main__":
