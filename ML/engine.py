@@ -603,7 +603,7 @@ _HERE       = os.path.dirname(os.path.abspath(__file__))
 # ============================================================
 #   ↓↓↓  CHANGE THIS LINE TO SWITCH WHICH MODEL IS LOADED  ↓↓↓
 # ============================================================
-DEFAULT_CHECKPOINT = os.path.join(_HERE, "models", "jazz_lstm.pt")
+DEFAULT_CHECKPOINT = os.path.join(_HERE, "models", "jazz_lstm_v2.pt")
 # ============================================================
 
 _VOCAB_PATH = os.path.join(_HERE, "data", "processed", "chord_vocab.json")

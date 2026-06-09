@@ -19,7 +19,7 @@ HOP_SIZE    = signalprocessing.HOP_SIZE        # 512 = ~11.6 ms/callback
 WIDTH = 36
 HEIGHT = 20
 fps = 60
-bpm = 30
+bpm = 60
 Testing_variable_for_testing = (fps*fps//bpm//4)
 speed = 1/Testing_variable_for_testing
 
@@ -29,11 +29,14 @@ detector = signalprocessing.PitchDetector()
 hor_pos = [0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,7,7.5,8,8.5,9,10,10.5,11,11.5,12,12.5,13,14,14.5,15,15.5,16,17,17.5,18,18.5,19,19.5,20,-10]
 key_width = [1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1,0.5,1,0.5,1,1,0.5,1,0.5,1,0.5,1,1]
 
-# 17-row pre-roll buffer: 16 silent + 1 anchor so the play line settles before
-# the engine starts committing. Each "row" is the column index of the single
-# note at that tick, or None for silence — we're monophonic, so storing one
-# int per tick is enough (no need for a 36-wide bitmask).
-buffer_sheet = [None] * 16 + [17]
+# 16-row pre-roll buffer (15 silent + 1 anchor row at index 15). This length
+# is chosen so engine_tick 0 reaches the play line at *exactly* tally 31 —
+# the same tally the engine does its first commit — so what the player sees
+# at the play line is what the engine is committing. Don't change without
+# also updating `_PLAY_LINE_OFFSET` and the engine-commit gate (`tally >= 31`).
+# Each "row" is the column index of the single note at that tick (None for
+# silence; we're monophonic so one int per tick is enough).
+buffer_sheet = [None] * 15 + [17]
 
 col_start = 48                       # MIDI 48 = C3 → column 0
 
@@ -89,29 +92,45 @@ class Figure:
         self._note_name = Note_list[col] if col is not None else ""
 
 
+class BeatBar:
+    """A horizontal bar-divider line. Carries an optional chord label that's
+    rendered at the left margin and scrolls down with the line — used to
+    announce the upcoming chord when it changes from the previous bar."""
+
+    def __init__(self, label=""):
+        self.y = 0
+        self.label = label
+
+
 class Music:
     def __init__(self, height, width):
         self.x = 40
         self.y = 40
         self.zoom = 50
         self.figure = deque()
-        self.beat_bars = [0]
+        # Bar lines start empty; the first one is spawned by the main loop's
+        # 16-tick `new_beatbar` block at tally=16, which reaches the play
+        # line at tally=31 — i.e. exactly when engine_tick 0 starts playing.
+        self.beat_bars = []
         self.height = height
         self.width = width
 
     def new_figure(self, col, source_idx=None):
         self.figure.append(Figure(col, source_idx=source_idx))
 
-    def new_beatbar(self):
-        self.beat_bars.append(0)
+    def new_beatbar(self, label=""):
+        """Spawn a new bar-divider line. If `label` is non-empty it's
+        rendered on the line as it descends, used to announce an upcoming
+        chord change."""
+        self.beat_bars.append(BeatBar(label=label))
         if len(self.beat_bars) > 3:
             self.beat_bars.pop(0)
 
     def go_down(self):
         for k in range(len(self.figure)):
             self.figure[k].y += speed
-        for h in range(len(self.beat_bars)):
-            self.beat_bars[h] += speed
+        for bar in self.beat_bars:
+            bar.y += speed
 
 
 # ─────────────────────── Realtime engine setup ────────────────────────
@@ -225,10 +244,13 @@ def get_played_token():
 
 
 # ─────────────────────── Chord display helpers ────────────────────────
-# Player at the play line is reading the figure with source_idx = tally-16.
-# Engine ticks start at total_sheet index 17 (after the 17-row buffer), so
-# the engine tick at the play line is (tally - 16) - 17 = tally - 33.
-_PLAY_LINE_OFFSET = 33
+# At tally T the figure at the play line has source_idx = T - 15 (it spent
+# 15 ticks scrolling from y=0 to y=15). With the 16-row buffer, total_sheet[S]
+# represents engine_tick (S - 16), so engine_tick at the play line is
+# (T - 15) - 16 = T - 31. This matches what the engine commits at tally T
+# (it advances current_tick from T-31 to T-30), so play-line content and
+# engine commit are aligned tick-for-tick.
+_PLAY_LINE_OFFSET = 31
 
 
 def chord_at_play_line(tally):
@@ -262,6 +284,7 @@ size = (1920, 1080)
 screen = pygame.display.set_mode(size, pygame.FULLSCREEN, vsync=1)
 font  = pygame.font.SysFont('Calibri', 40, True, False)
 font1 = pygame.font.SysFont('Calibri', 50, True, False)
+font_bar = pygame.font.SysFont('Calibri', 24, True, False)   # bar-line chord labels
 pygame.display.set_caption("Jazz")
 
 done = False
@@ -414,7 +437,20 @@ while not done:
                                           header=False)
 
     if counter % (Testing_variable_for_testing * 16) == 0:
-        game.new_beatbar()
+        # A bar line spawned now will reach the play line in 15 ticks. With
+        # the 16-row pre-roll buffer that lines up with engine_tick = tally-16
+        # crossing the play line — i.e. the start of bar (tally - 16) // 16.
+        # Label this line with the bar's chord, but only if it differs from
+        # the previous bar (i.e. there's actually a chord *change* coming).
+        bars = engine.bar_chords or []
+        bar_idx = (tally - 16) // 16
+        if 0 <= bar_idx < len(bars):
+            new_chord = bars[bar_idx]
+            prev_chord = bars[bar_idx - 1] if bar_idx > 0 else None
+            chord_label = new_chord if new_chord != prev_chord else ""
+        else:
+            chord_label = ""
+        game.new_beatbar(chord_label)
 
     game.go_down()
 
@@ -471,13 +507,20 @@ while not done:
             )
             i = j
 
-    if game.beat_bars is not None:
-        for beat_bar in game.beat_bars:
-            if beat_bar > 15:
+    if game.beat_bars:
+        for bar in game.beat_bars:
+            if bar.y > 15 or bar.y < -2:
                 continue
+            line_py = game.y + game.zoom * bar.y - 3
             pygame.draw.line(screen, GRAY,
-                             [game.x + game.zoom * 0,     game.y + game.zoom * beat_bar - 3],
-                             [game.x + game.zoom * WIDTH, game.y + game.zoom * beat_bar - 3])
+                             [game.x + game.zoom * 0,     line_py],
+                             [game.x + game.zoom * WIDTH, line_py])
+            # Chord change announcement: render the upcoming chord at the
+            # left edge of the playing area, just above the line so it
+            # scrolls down with it without overlapping the line itself.
+            if bar.label:
+                lbl = font_bar.render(bar.label, True, BLACK)
+                screen.blit(lbl, [game.x + 2, line_py - lbl.get_height()])
 
     # ── Top-of-screen text + blue square on the played key ────────────
     text1 = font1.render("BPM: " + str(bpm), True, BLACK)
