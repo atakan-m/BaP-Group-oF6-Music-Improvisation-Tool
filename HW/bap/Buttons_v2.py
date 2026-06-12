@@ -100,7 +100,7 @@ def main():
                         chord_prog.append(chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
                         current_chord = [0,0]
                     case pygame.K_p:
-                        chord_prog = ["Am7","Bm7","E9","E9"]
+                        chord_prog = ["Dm7","G7","Cmaj7","Cmaj7"]
                     case pygame.K_d:
                         pygame.quit()
                         return chord_prog
@@ -113,7 +113,7 @@ def main():
         text = font.render("current chord:" + str(chord_dict[current_chord[0]]) + str(mod_dict[current_chord[1]]),True, BLACK)
         text1 = font1.render("current chord progression:" +  str(chord_prog),True, BLACK)
         text2 = font1.render("Use w/s or arrow_up/arrow_down to change chord, press c to add to list and d to confirm", True, BLACK)
-        text3 = font1.render("Recommended: [Am7, Bm7, E9, E9], press p to auto-input", True, BLACK)
+        text3 = font1.render("Recommended: [Dm7, G7, Cmaj7, Cmaj7], press p to auto-input", True, BLACK)
         screen.blit(text, [200, 200])
         screen.blit(text1, [200, 400])
         screen.blit(text2, [200, 600])
