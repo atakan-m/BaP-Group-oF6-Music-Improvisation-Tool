@@ -55,6 +55,55 @@ Note_list = [
 ]
 
 
+# Set True for per-tick commit + match/deviation logs in the terminal.
+DEBUG_REALTIME = True
+
+# ─────────────────────── Realtime perf logging ────────────────────────
+# Times each engine.commit() call and buckets by the engine's last_action
+# ("match" / "silence" / "deviation" / "locked"). Deviation commits are
+# the spike — they trigger _build_deviation_rollout which does up to
+# rollout_ticks LSTM forwards in a row. On the Pi these are the calls
+# that cause tick drift if performance is too tight, so they're the
+# numbers worth watching.
+#
+# Settings:
+#   PERF_PRINT_EVERY_N_TICKS — how often to print a summary table
+#                              (set to 0 to disable periodic prints).
+#   PERF_RECENT_WINDOW      — periodic prints summarise the last N
+#                              samples per bucket (so you see what
+#                              perf is doing *now*, not the all-time
+#                              average).
+#   PERF_CSV_ON_QUIT        — dump every raw sample to this CSV when
+#                              you quit (set to None to skip).
+PERF_PRINT_EVERY_N_TICKS = 100
+PERF_RECENT_WINDOW       = 100
+PERF_CSV_ON_QUIT         = "commit_timings.csv"
+
+perf_commit     = PerfLogger("engine.commit")
+perf_tick_block = PerfLogger("full_tick_block")
+
+# ─────────────────────── Display rendering helpers ────────────────────
+# Token sequence → per-tick column indices. REST/HOLD reuse the previous
+# pitch (monophonic display can't draw "rest" without a special marker, so
+# we just hold the previous pitch's column). Stateless: pass the prev pitch
+# in and back out so we can re-render the future on every commit without
+# corrupting a global.
+PITCH_LOW_DISPLAY  = 48              # MIDI 48 = C3
+PITCH_HIGH_DISPLAY = 83              # MIDI 83 = B5
+DEFAULT_DISPLAY_PITCH = 60
+
+
+# ─────────────────────── Mic → tick aggregator ────────────────────────
+# The SP callback fires every ~11.6ms; aggregate all detections inside the
+# current 16th-note window and emit one REST/HOLD/NOTE token at the boundary.
+mic_aggregator = generate.MicTickAggregator()
+
+_original_detector_callback = detector.callback
+def _detector_callback_with_aggregation(indata, frames, time_info, status):
+    _original_detector_callback(indata, frames, time_info, status)
+    mic_aggregator.observe(detector.last_midi)
+detector.callback = _detector_callback_with_aggregation
+
 class Figure:
     """One Figure per 16th-note tick. Stores just a column index (or None
     for silence) plus the tick it was spawned from. The source_idx lets the
@@ -133,76 +182,6 @@ class Music:
             bar.y += speed
 
 
-# ─────────────────────── Realtime engine setup ────────────────────────
-chord_prog_2 = []
-for chord in Buttons_v2.main():
-    chord_prog_2.append((chord, 1))    # 1 bar per chord; engine cycles to fill
-
-engine = generate.make_realtime_engine(
-    chord_prog_2,
-    total_bars=16,
-    # ↓↓↓  PER-RUN TUNING (model file lives at ML/models/jazz_lstm.pt;
-    #      to switch models, edit DEFAULT_CHECKPOINT in ML/engine.py)  ↓↓↓
-    temperature=0.9,            # 0.4 ballad, 0.8 bebop
-    rollout_ticks=30,            # ~5.6s of lookahead — covers display window
-    deviation_lock_ticks=4,      # quarter-note lock after a deviation
-    hold_penalty=1.0,            # +ve → shorter notes, −ve → longer
-    rest_penalty=1.5,            # suppress silence
-    max_consec_holds=4,          # hard cap → notes never exceed a quarter
-    # ── DEVIATION COST AMORTISATION ────────────────────────────────────
-    # On a deviation we used to do ~rollout_ticks LSTM forwards in one
-    # tick (the spike you saw in the perf log). Now we only build a short
-    # rollout up front (the lock HOLDs + `deviation_initial_fresh` fresh
-    # tokens) and let subsequent commits extend it by up to
-    # `rollout_extend_per_tick` until back at rollout_ticks length.
-    #   * deviation_initial_fresh=2 → deviation tick ≈ 1 advance + 3 lock
-    #     simulation + 2 sample = ~6 LSTM forwards.
-    #   * rollout_extend_per_tick=4 → catch-up commits do ~2 normal + 4
-    #     catch-up = ~6 forwards, for ~6 ticks until refilled.
-    # Visual trade-off: right after deviation the new-plan figures only
-    # appear close to the play line at first; the wave of change
-    # propagates outward as the rollout grows.
-    deviation_initial_fresh=2,
-    rollout_extend_per_tick=4,
-)
-
-# Set True for per-tick commit + match/deviation logs in the terminal.
-DEBUG_REALTIME = True
-
-# ─────────────────────── Realtime perf logging ────────────────────────
-# Times each engine.commit() call and buckets by the engine's last_action
-# ("match" / "silence" / "deviation" / "locked"). Deviation commits are
-# the spike — they trigger _build_deviation_rollout which does up to
-# rollout_ticks LSTM forwards in a row. On the Pi these are the calls
-# that cause tick drift if performance is too tight, so they're the
-# numbers worth watching.
-#
-# Settings:
-#   PERF_PRINT_EVERY_N_TICKS — how often to print a summary table
-#                              (set to 0 to disable periodic prints).
-#   PERF_RECENT_WINDOW      — periodic prints summarise the last N
-#                              samples per bucket (so you see what
-#                              perf is doing *now*, not the all-time
-#                              average).
-#   PERF_CSV_ON_QUIT        — dump every raw sample to this CSV when
-#                              you quit (set to None to skip).
-PERF_PRINT_EVERY_N_TICKS = 100
-PERF_RECENT_WINDOW       = 100
-PERF_CSV_ON_QUIT         = "commit_timings.csv"
-
-perf_commit     = PerfLogger("engine.commit")
-perf_tick_block = PerfLogger("full_tick_block")
-
-# ─────────────────────── Display rendering helpers ────────────────────
-# Token sequence → per-tick column indices. REST/HOLD reuse the previous
-# pitch (monophonic display can't draw "rest" without a special marker, so
-# we just hold the previous pitch's column). Stateless: pass the prev pitch
-# in and back out so we can re-render the future on every commit without
-# corrupting a global.
-PITCH_LOW_DISPLAY  = 48              # MIDI 48 = C3
-PITCH_HIGH_DISPLAY = 83              # MIDI 83 = B5
-DEFAULT_DISPLAY_PITCH = 60
-
 
 def render_tokens(tokens, start_prev_midi):
     """Render a token stream into column indices.
@@ -218,25 +197,6 @@ def render_tokens(tokens, start_prev_midi):
             prev = midi
         cols.append(midi_to_col(prev))
     return cols, prev
-
-
-# Pre-fill the displayable sheet with the engine's initial rollout so the
-# player has notes to read during the pre-roll period.
-initial_rollout = engine.rollout()
-initial_cols, _prev_chain_midi = render_tokens(initial_rollout, DEFAULT_DISPLAY_PITCH)
-total_sheet = buffer_sheet + initial_cols    # list of int|None, one per tick
-
-
-# ─────────────────────── Mic → tick aggregator ────────────────────────
-# The SP callback fires every ~11.6ms; aggregate all detections inside the
-# current 16th-note window and emit one REST/HOLD/NOTE token at the boundary.
-mic_aggregator = generate.MicTickAggregator()
-
-_original_detector_callback = detector.callback
-def _detector_callback_with_aggregation(indata, frames, time_info, status):
-    _original_detector_callback(indata, frames, time_info, status)
-    mic_aggregator.observe(detector.last_midi)
-detector.callback = _detector_callback_with_aggregation
 
 
 def get_played_token():
@@ -272,285 +232,332 @@ def chord_upcoming(tally):
 # ────────────────────────── Pygame setup ──────────────────────────────
 real_pos = [40 + 50 * hor_pos[p] * 36/21 + 2 for p in range(37)]
 
-pygame.init()
-print(" starting ")
+def run_game(total_sheet):
+    pygame.init()
+    print(" starting ")
 
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-GRAY = (128, 128, 128)
-RED = (255, 0, 0)
+    BLACK = (0, 0, 0)
+    WHITE = (255, 255, 255)
+    GRAY = (128, 128, 128)
+    RED = (255, 0, 0)
 
-size = (1920, 1080)
-screen = pygame.display.set_mode(size, pygame.FULLSCREEN, vsync=1)
-font  = pygame.font.SysFont('Calibri', 40, True, False)
-font1 = pygame.font.SysFont('Calibri', 50, True, False)
-font_bar = pygame.font.SysFont('Calibri', 24, True, False)   # bar-line chord labels
-pygame.display.set_caption("Jazz")
+    size = (1920, 1080)
+    screen = pygame.display.set_mode(size, pygame.FULLSCREEN, vsync=1)
+    font  = pygame.font.SysFont('Calibri', 40, True, False)
+    font1 = pygame.font.SysFont('Calibri', 50, True, False)
+    font_bar = pygame.font.SysFont('Calibri', 24, True, False)   # bar-line chord labels
+    pygame.display.set_caption("Jazz")
 
-done = False
-clock = pygame.time.Clock()
+    done = False
+    clock = pygame.time.Clock()
 
-game = Music(HEIGHT, WIDTH)
-counter = 0
-tally = 0
+    game = Music(HEIGHT, WIDTH)
+    counter = 0
+    tally = 0
 
-background = pygame.Surface(size)
-background.fill(WHITE)
+    background = pygame.Surface(size)
+    background.fill(WHITE)
 
-# ── Background: the piano-key visual at the bottom + bar dividers ────
-for j in range(21 + 1):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 36/21, game.y + game.zoom * 15, 1, game.zoom * 5], 1)
-for j in range(4):
-    pygame.draw.rect(background, BLACK, [game.x + 5.15 * game.zoom + game.zoom * j * 12, game.y , 1, game.zoom * 15], 1)
-for j in range(4):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12, game.y, 1, game.zoom * 15], 1)
-for j in range(3):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 1.4 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
-for j in range(3):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 3.25 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
-for j in range(3):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 6.55 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
-for j in range(3):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 8.33 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
-for j in range(3):
-    pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 10.11 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9, game.zoom* 3], 100)
-pygame.draw.line(background, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 0],  [game.x + game.zoom * WIDTH, game.y + game.zoom * 0])
-pygame.draw.line(background, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom * WIDTH, game.y + game.zoom * 20])
-pygame.draw.line(background, RED,  [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom * WIDTH, game.y + game.zoom * 15])
+    # ── Background: the piano-key visual at the bottom + bar dividers ────
+    for j in range(21 + 1):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 36/21, game.y + game.zoom * 15, 1, game.zoom * 5], 1)
+    for j in range(4):
+        pygame.draw.rect(background, BLACK, [game.x + 5.15 * game.zoom + game.zoom * j * 12, game.y , 1, game.zoom * 15], 1)
+    for j in range(4):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12, game.y, 1, game.zoom * 15], 1)
+    for j in range(3):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 1.4 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
+    for j in range(3):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 3.25 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
+    for j in range(3):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 6.55 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
+    for j in range(3):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 8.33 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9,  game.zoom* 3], 100)
+    for j in range(3):
+        pygame.draw.rect(background, BLACK, [game.x + game.zoom * j * 12 + game.zoom * 10.11 - 3, game.y + game.zoom * 18 + game.zoom * -3, game.zoom * 0.9, game.zoom* 3], 100)
+    pygame.draw.line(background, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 0],  [game.x + game.zoom * WIDTH, game.y + game.zoom * 0])
+    pygame.draw.line(background, GRAY, [game.x + game.zoom * 0, game.y + game.zoom * 20], [game.x + game.zoom * WIDTH, game.y + game.zoom * 20])
+    pygame.draw.line(background, RED,  [game.x + game.zoom * 0, game.y + game.zoom * 15], [game.x + game.zoom * WIDTH, game.y + game.zoom * 15])
 
-sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
-               blocksize=HOP_SIZE, dtype="float32",
-               callback=detector.callback).start()
+    sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                blocksize=HOP_SIZE, dtype="float32",
+                callback=detector.callback).start()
 
 
-# ────────────────────────────── Main loop ─────────────────────────────
-while not done:
-    counter += 1
-    if counter > 100000:
-        counter = 0
+    # ────────────────────────────── Main loop ─────────────────────────────
+    while not done:
+        counter += 1
+        if counter > 100000:
+            counter = 0
 
-    if counter % (Testing_variable_for_testing) == 0:
-        # ──────────────────────────────────────────────────────────────
-        # REALTIME STEP — once per 16th-note tick boundary.
-        #
-        # Display has ~31 ticks of visual lookahead (16 buffer rows + 15
-        # ticks of scroll from y=0 to the play line at y=15). The player
-        # only plays the model's first prediction at wall-clock tick 31.
-        # Until then we MUST NOT commit to the engine — otherwise we'd
-        # feed it 30 ticks of "silence" before the player has had a chance
-        # to play, which conditions the model into long, dull notes.
-        #
-        # After tally >= 31, every wall-clock tick we:
-        #   1. read the dominant pitch from the SP aggregator over the
-        #      last 16th window,
-        #   2. commit that token to the engine,
-        #   3. replace total_sheet[tally..] from rollout[14..] (upcoming),
-        #   4. update_image on-screen figures from rollout[0..13]. THIS
-        #      is what makes deviations VISIBLE near the play line.
-        # ──────────────────────────────────────────────────────────────
-        # Sentinel — set only if we actually start the tick-block timer.
-        # `tally` is incremented later in this if-branch, so we can't rely
-        # on the same `tally >= 31` check at both ends.
-        _t_block = None
-        if not engine.is_done and tally >= 31:
-            # Wrap the whole tick block so we can compare engine.commit
-            # cost vs. everything else (render + figure updates).
-            _t_block = perf_tick_block.start()
+        if counter % (Testing_variable_for_testing) == 0:
+            # ──────────────────────────────────────────────────────────────
+            # REALTIME STEP — once per 16th-note tick boundary.
+            #
+            # Display has ~31 ticks of visual lookahead (16 buffer rows + 15
+            # ticks of scroll from y=0 to the play line at y=15). The player
+            # only plays the model's first prediction at wall-clock tick 31.
+            # Until then we MUST NOT commit to the engine — otherwise we'd
+            # feed it 30 ticks of "silence" before the player has had a chance
+            # to play, which conditions the model into long, dull notes.
+            #
+            # After tally >= 31, every wall-clock tick we:
+            #   1. read the dominant pitch from the SP aggregator over the
+            #      last 16th window,
+            #   2. commit that token to the engine,
+            #   3. replace total_sheet[tally..] from rollout[14..] (upcoming),
+            #   4. update_image on-screen figures from rollout[0..13]. THIS
+            #      is what makes deviations VISIBLE near the play line.
+            # ──────────────────────────────────────────────────────────────
+            # Sentinel — set only if we actually start the tick-block timer.
+            # `tally` is incremented later in this if-branch, so we can't rely
+            # on the same `tally >= 31` check at both ends.
+            _t_block = None
+            if not engine.is_done and tally >= 31:
+                # Wrap the whole tick block so we can compare engine.commit
+                # cost vs. everything else (render + figure updates).
+                _t_block = perf_tick_block.start()
 
-            played_token = get_played_token()
+                played_token = get_played_token()
 
-            # The expensive call — bucket by what kind of commit it ended
-            # up being (deviation = up to rollout_ticks LSTM forwards;
-            # match/silence = 2 forwards; locked = 1 forward).
-            _t_commit = perf_commit.start()
-            rollout = engine.commit(played_token)
-            commit_ms = perf_commit.stop(_t_commit, engine.last_action)
+                # The expensive call — bucket by what kind of commit it ended
+                # up being (deviation = up to rollout_ticks LSTM forwards;
+                # match/silence = 2 forwards; locked = 1 forward).
+                _t_commit = perf_commit.start()
+                rollout = engine.commit(played_token)
+                commit_ms = perf_commit.stop(_t_commit, engine.last_action)
 
-            if DEBUG_REALTIME:
-                if played_token == 0:
-                    played_str = "REST"
-                elif played_token == 1:
-                    played_str = "HOLD"
-                else:
-                    played_str = f"NOTE_{40 + played_token - 2}"
-                buf_preview = list(engine._rollout_buf[:5])
-                print(f"[t={tally:>4d}] played={played_str:<8s} "
-                      f"curr_pitch={engine.current_pitch}  "
-                      f"action={engine.last_action:<9s}  "
-                      f"commit={commit_ms:>6.1f}ms  "
-                      f"buf[0:5]={buf_preview}")
-            if rollout:
-                # Render the FULL rollout in one pass so the prev-pitch chain
-                # for HOLD/REST is consistent. `engine.current_pitch` anchors
-                # the start (post-deviation that's the deviation note, not
-                # whatever stale pitch the previous on-screen tick held).
-                spawn_prev = (engine.current_pitch
-                              if engine.current_pitch is not None
-                              else DEFAULT_DISPLAY_PITCH)
-                rollout_cols, _ = render_tokens(rollout, spawn_prev)
-
-                # --- (a) UPDATE ON-SCREEN FIGURES with rollout[0..13].
-                # A figure with source_idx S is at y = tally - 1 - S right
-                # now. Mapping into rollout: k = S - tally + 14, valid for
-                # 0 <= k < 14. This is what makes the next note at the
-                # BOTTOM of the display visibly react to a deviation.
-                for fig in game.figure:
-                    if fig.source_idx is None:
-                        continue
-                    k = fig.source_idx - tally + 14
-                    if 0 <= k < 14 and k < len(rollout_cols):
-                        fig.update_image(rollout_cols[k])
-
-                # --- (b) REPLACE / EXTEND total_sheet from rollout[14:]
-                # for upcoming spawns at this and future boundaries.
-                for offs, col in enumerate(rollout_cols[14:]):
-                    idx = tally + offs
-                    if idx < len(total_sheet):
-                        total_sheet[idx] = col
+                if DEBUG_REALTIME:
+                    if played_token == 0:
+                        played_str = "REST"
+                    elif played_token == 1:
+                        played_str = "HOLD"
                     else:
-                        total_sheet.append(col)
+                        played_str = f"NOTE_{40 + played_token - 2}"
+                    buf_preview = list(engine._rollout_buf[:5])
+                    print(f"[t={tally:>4d}] played={played_str:<8s} "
+                        f"curr_pitch={engine.current_pitch}  "
+                        f"action={engine.last_action:<9s}  "
+                        f"commit={commit_ms:>6.1f}ms  "
+                        f"buf[0:5]={buf_preview}")
+                if rollout:
+                    # Render the FULL rollout in one pass so the prev-pitch chain
+                    # for HOLD/REST is consistent. `engine.current_pitch` anchors
+                    # the start (post-deviation that's the deviation note, not
+                    # whatever stale pitch the previous on-screen tick held).
+                    spawn_prev = (engine.current_pitch
+                                if engine.current_pitch is not None
+                                else DEFAULT_DISPLAY_PITCH)
+                    rollout_cols, _ = render_tokens(rollout, spawn_prev)
 
-        if tally < len(total_sheet):
-            game.new_figure(total_sheet[tally], source_idx=tally)
-            tally += 1
-        if len(game.figure) != 0 and game.figure[0].y > 19:
-            game.figure.popleft()
-        if len(game.figure) != 0 and game.figure[0].col_idx is None:
-            game.figure.popleft()
+                    # --- (a) UPDATE ON-SCREEN FIGURES with rollout[0..13].
+                    # A figure with source_idx S is at y = tally - 1 - S right
+                    # now. Mapping into rollout: k = S - tally + 14, valid for
+                    # 0 <= k < 14. This is what makes the next note at the
+                    # BOTTOM of the display visibly react to a deviation.
+                    for fig in game.figure:
+                        if fig.source_idx is None:
+                            continue
+                        k = fig.source_idx - tally + 14
+                        if 0 <= k < 14 and k < len(rollout_cols):
+                            fig.update_image(rollout_cols[k])
 
-        # Close out the whole-tick timer (covers commit + render + figure
-        # update + sheet extension + spawn). Gated on the sentinel rather
-        # than `tally >= 31` because `tally` may have just been incremented.
-        if _t_block is not None:
-            perf_tick_block.stop(_t_block, engine.last_action)
+                    # --- (b) REPLACE / EXTEND total_sheet from rollout[14:]
+                    # for upcoming spawns at this and future boundaries.
+                    for offs, col in enumerate(rollout_cols[14:]):
+                        idx = tally + offs
+                        if idx < len(total_sheet):
+                            total_sheet[idx] = col
+                        else:
+                            total_sheet.append(col)
 
-        # Periodic perf summary — useful on the Pi where you want to see
-        # whether deviation spikes are still inside the 16th-note budget
-        # (≈107 ms at 140 BPM; ≈250 ms at 60 BPM).
-        if (PERF_PRINT_EVERY_N_TICKS
-                and tally >= 31
-                and tally % PERF_PRINT_EVERY_N_TICKS == 0):
-            tick_budget_ms = 60_000.0 / bpm / 4
-            print(f"\n  16th-note budget at {bpm} BPM = {tick_budget_ms:.1f} ms")
-            perf_commit.print_summary(recent_n=PERF_RECENT_WINDOW)
-            perf_tick_block.print_summary(recent_n=PERF_RECENT_WINDOW,
-                                          header=False)
+            if tally < len(total_sheet):
+                game.new_figure(total_sheet[tally], source_idx=tally)
+                tally += 1
+            if len(game.figure) != 0 and game.figure[0].y > 16:
+                game.figure.popleft()
+            if len(game.figure) != 0 and game.figure[0].col_idx is None:
+                game.figure.popleft()
 
-    if counter % (Testing_variable_for_testing * 16) == 0:
-        # A bar line spawned now will reach the play line in 15 ticks. With
-        # the 16-row pre-roll buffer that lines up with engine_tick = tally-16
-        # crossing the play line — i.e. the start of bar (tally - 16) // 16.
-        # Label this line with the bar's chord, but only if it differs from
-        # the previous bar (i.e. there's actually a chord *change* coming).
-        bars = engine.bar_chords or []
-        bar_idx = (tally - 16) // 16
-        if 0 <= bar_idx < len(bars):
-            new_chord = bars[bar_idx]
-            prev_chord = bars[bar_idx - 1] if bar_idx > 0 else None
-            chord_label = new_chord if new_chord != prev_chord else ""
-        else:
-            chord_label = ""
-        game.new_beatbar(chord_label)
+            # Close out the whole-tick timer (covers commit + render + figure
+            # update + sheet extension + spawn). Gated on the sentinel rather
+            # than `tally >= 31` because `tally` may have just been incremented.
+            if _t_block is not None:
+                perf_tick_block.stop(_t_block, engine.last_action)
 
-    game.go_down()
+            # Periodic perf summary — useful on the Pi where you want to see
+            # whether deviation spikes are still inside the 16th-note budget
+            # (≈107 ms at 140 BPM; ≈250 ms at 60 BPM).
+            if (PERF_PRINT_EVERY_N_TICKS
+                    and tally >= 31
+                    and tally % PERF_PRINT_EVERY_N_TICKS == 0):
+                tick_budget_ms = 60_000.0 / bpm / 4
+                print(f"\n  16th-note budget at {bpm} BPM = {tick_budget_ms:.1f} ms")
+                perf_commit.print_summary(recent_n=PERF_RECENT_WINDOW)
+                perf_tick_block.print_summary(recent_n=PERF_RECENT_WINDOW,
+                                            header=False)
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            done = True
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_r:
-                game.__init__(HEIGHT, WIDTH)
-            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+        if counter % (Testing_variable_for_testing * 16) == 0:
+            # A bar line spawned now will reach the play line in 15 ticks. With
+            # the 16-row pre-roll buffer that lines up with engine_tick = tally-16
+            # crossing the play line — i.e. the start of bar (tally - 16) // 16.
+            # Label this line with the bar's chord, but only if it differs from
+            # the previous bar (i.e. there's actually a chord *change* coming).
+            bars = engine.bar_chords or []
+            bar_idx = (tally - 16) // 16
+            if 0 <= bar_idx < len(bars):
+                new_chord = bars[bar_idx]
+                prev_chord = bars[bar_idx - 1] if bar_idx > 0 else None
+                chord_label = new_chord if new_chord != prev_chord else ""
+            else:
+                chord_label = ""
+            game.new_beatbar(chord_label)
+
+        game.go_down()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
                 done = True
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    game.__init__(HEIGHT, WIDTH)
+                if event.key == pygame.K_ESCAPE:
+                    done = True
+                if event.key == pygame.K_q:
+                    return
 
-    screen.blit(background, (0, 0))
+        screen.blit(background, (0, 0))
 
-    # ── Figures: group consecutive same-column ticks into one tall
-    #    rectangle so a sustained note shows as a single block (matches the
-    #    variable-length visual from the latest hardware Piano_display). The
-    #    per-tick internal model is what allows realtime updates to figures
-    #    already on screen — see the update_image loop above. ──
-    if game.figure is not None and len(game.figure) > 0:
-        figs = list(game.figure)
-        i = 0
-        while i < len(figs):
-            fig = figs[i]
-            col = fig.col_idx
-            if col is None:
-                i += 1
-                continue
-            # Find the run of consecutive same-column figures from i onward.
-            j = i + 1
-            while j < len(figs) and figs[j].col_idx == col:
-                j += 1
-            # Group spans figs[i..j-1]. figs[0] is oldest (highest y), figs[-1]
-            # newest (lowest y). Within the group, last (figs[j-1]) is the
-            # newest = top of the visual rectangle.
-            top_fig = figs[j - 1]
-            n_ticks = j - i
-            # Skip if entirely off-screen.
-            if top_fig.y > 22 or (top_fig.y + n_ticks - 1) < -2:
+        # ── Figures: group consecutive same-column ticks into one tall
+        #    rectangle so a sustained note shows as a single block (matches the
+        #    variable-length visual from the latest hardware Piano_display). The
+        #    per-tick internal model is what allows realtime updates to figures
+        #    already on screen — see the update_image loop above. ──
+        if game.figure is not None and len(game.figure) > 0:
+            figs = list(game.figure)
+            i = 0
+            while i < len(figs):
+                fig = figs[i]
+                col = fig.col_idx
+                if col is None:
+                    i += 1
+                    continue
+                # Find the run of consecutive same-column figures from i onward.
+                j = i + 1
+                while j < len(figs) and figs[j].col_idx == col:
+                    j += 1
+                # Group spans figs[i..j-1]. figs[0] is oldest (highest y), figs[-1]
+                # newest (lowest y). Within the group, last (figs[j-1]) is the
+                # newest = top of the visual rectangle.
+                top_fig = figs[j - 1]
+                n_ticks = j - i
+                # Skip if entirely off-screen.
+                if top_fig.y > 22 or (top_fig.y + n_ticks - 1) < -2:
+                    i = j
+                    continue
+                pygame.draw.rect(
+                    screen, (0, 100 * key_width[col], 0),
+                    [real_pos[col] + game.zoom * (0.5 / key_width[col] - 0.5),
+                    game.y + game.zoom * (top_fig.y - 1) + 1,
+                    1.7 * game.zoom * key_width[col] - 3,
+                    game.zoom * n_ticks - 3],
+                )
+                # Note name at the top of the rectangle.
+                screen.blit(
+                    font.render(top_fig.note_name, True, RED),
+                    [real_pos[col] + (game.zoom * 0.5),
+                    game.y + game.zoom * (top_fig.y - 1)],
+                )
                 i = j
-                continue
+
+        if game.beat_bars:
+            for bar in game.beat_bars:
+                if bar.y > 15 or bar.y < -2:
+                    continue
+                line_py = game.y + game.zoom * bar.y - 3
+                pygame.draw.line(screen, GRAY,
+                                [game.x + game.zoom * 0,     line_py],
+                                [game.x + game.zoom * WIDTH, line_py])
+                # Chord change announcement: render the upcoming chord at the
+                # left edge of the playing area, just above the line so it
+                # scrolls down with it without overlapping the line itself.
+                if bar.label:
+                    lbl = font_bar.render(bar.label, True, BLACK)
+                    screen.blit(lbl, [game.x + 2, line_py - lbl.get_height()])
+
+        # ── Top-of-screen text + blue square on the played key ────────────
+        text1 = font1.render("BPM: " + str(bpm), True, BLACK)
+        text2 = font1.render("Time: " + str(counter // fps), True, BLACK)
+        if detector.last_midi is not None:
+            _m = detector.last_midi
+            _name = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"][_m % 12] + str(_m // 12 - 1)
+            text3 = font1.render("Cur note: " + _name, True, BLACK)
+            # Blue marker on the keyboard at the bottom.
             pygame.draw.rect(
-                screen, (0, 100 * key_width[col], 0),
-                [real_pos[col] + game.zoom * (0.5 / key_width[col] - 0.5),
-                 game.y + game.zoom * (top_fig.y - 1) + 1,
-                 1.7 * game.zoom * key_width[col] - 3,
-                 game.zoom * n_ticks - 3],
+                screen, (0, 0, 255),
+                [real_pos[(_m - 48) % 37] + game.zoom * (0.5 / key_width[(_m - 48) % 37] - 0.5),
+                game.zoom * 17,
+                1.7 * key_width[(_m - 48) % 37] * game.zoom - 3,
+                game.zoom * 2],
             )
-            # Note name at the top of the rectangle.
-            screen.blit(
-                font.render(top_fig.note_name, True, RED),
-                [real_pos[col] + (game.zoom * 0.5),
-                 game.y + game.zoom * (top_fig.y - 1)],
-            )
-            i = j
+        else:
+            text3 = font1.render("Cur note: ", True, BLACK)
 
-    if game.beat_bars:
-        for bar in game.beat_bars:
-            if bar.y > 15 or bar.y < -2:
-                continue
-            line_py = game.y + game.zoom * bar.y - 3
-            pygame.draw.line(screen, GRAY,
-                             [game.x + game.zoom * 0,     line_py],
-                             [game.x + game.zoom * WIDTH, line_py])
-            # Chord change announcement: render the upcoming chord at the
-            # left edge of the playing area, just above the line so it
-            # scrolls down with it without overlapping the line itself.
-            if bar.label:
-                lbl = font_bar.render(bar.label, True, BLACK)
-                screen.blit(lbl, [game.x + 2, line_py - lbl.get_height()])
+        text4 = font1.render("Chord: "      + chord_at_play_line(tally), True, BLACK)
+        text5 = font1.render("Next chord: " + chord_upcoming(tally),     True, BLACK)
 
-    # ── Top-of-screen text + blue square on the played key ────────────
-    text1 = font1.render("BPM: " + str(bpm), True, BLACK)
-    text2 = font1.render("Time: " + str(counter // fps), True, BLACK)
-    if detector.last_midi is not None:
-        _m = detector.last_midi
-        _name = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"][_m % 12] + str(_m // 12 - 1)
-        text3 = font1.render("Cur note: " + _name, True, BLACK)
-        # Blue marker on the keyboard at the bottom.
-        pygame.draw.rect(
-            screen, (0, 0, 255),
-            [real_pos[(_m - 48) % 37] + game.zoom * (0.5 / key_width[(_m - 48) % 37] - 0.5),
-             game.zoom * 17,
-             1.7 * key_width[(_m - 48) % 37] * game.zoom - 3,
-             game.zoom * 2],
-        )
-    else:
-        text3 = font1.render("Cur note: ", True, BLACK)
+        screen.blit(text1, [0, 0])
+        screen.blit(text2, [game.zoom * 6, 0])
+        screen.blit(text3, [game.zoom * 12, 0])
+        screen.blit(text4, [game.zoom * 20, 0])
+        screen.blit(text5, [game.zoom * 28, 0])
 
-    text4 = font1.render("Chord: "      + chord_at_play_line(tally), True, BLACK)
-    text5 = font1.render("Next chord: " + chord_upcoming(tally),     True, BLACK)
+        pygame.display.flip()
+        clock.tick(fps)
+        
+    pygame.quit()
+    return
 
-    screen.blit(text1, [0, 0])
-    screen.blit(text2, [game.zoom * 6, 0])
-    screen.blit(text3, [game.zoom * 12, 0])
-    screen.blit(text4, [game.zoom * 20, 0])
-    screen.blit(text5, [game.zoom * 28, 0])
+# ─────────────────────── Realtime engine setup ────────────────────────
+while True:
+    chord_prog_2 = []
+    for chord in Buttons_v2.main():
+        chord_prog_2.append((chord, 1))    # 1 bar per chord; engine cycles to fill
+    engine = generate.make_realtime_engine(
+        chord_prog_2,
 
-    pygame.display.flip()
-    clock.tick(fps)
+        total_bars=16,
+        # ↓↓↓  PER-RUN TUNING (model file lives at ML/models/jazz_lstm.pt;
+        #      to switch models, edit DEFAULT_CHECKPOINT in ML/engine.py)  ↓↓↓
+        temperature=0.9,            # 0.4 ballad, 0.8 bebop
+        rollout_ticks=30,            # ~5.6s of lookahead — covers display window
+        deviation_lock_ticks=4,      # quarter-note lock after a deviation
+        hold_penalty=1.0,            # +ve → shorter notes, −ve → longer
+        rest_penalty=1.5,            # suppress silence
+        max_consec_holds=4,          # hard cap → notes never exceed a quarter
+        # ── DEVIATION COST AMORTISATION ────────────────────────────────────
+        # On a deviation we used to do ~rollout_ticks LSTM forwards in one
+        # tick (the spike you saw in the perf log). Now we only build a short
+        # rollout up front (the lock HOLDs + `deviation_initial_fresh` fresh
+        # tokens) and let subsequent commits extend it by up to
+        # `rollout_extend_per_tick` until back at rollout_ticks length.
+        #   * deviation_initial_fresh=2 → deviation tick ≈ 1 advance + 3 lock
+        #     simulation + 2 sample = ~6 LSTM forwards.
+        #   * rollout_extend_per_tick=4 → catch-up commits do ~2 normal + 4
+        #     catch-up = ~6 forwards, for ~6 ticks until refilled.
+        # Visual trade-off: right after deviation the new-plan figures only
+        # appear close to the play line at first; the wave of change
+        # propagates outward as the rollout grows.
+        deviation_initial_fresh=2,
+        rollout_extend_per_tick=4,
+    )
+
+    # Pre-fill the displayable sheet with the engine's initial rollout so the
+    # player has notes to read during the pre-roll period.
+    initial_rollout = engine.rollout()
+    initial_cols, _prev_chain_midi = render_tokens(initial_rollout, DEFAULT_DISPLAY_PITCH)
+    total_sheet = buffer_sheet + initial_cols    # list of int|None, one per tick
+    run_game(total_sheet)
 
 # ───────────────────── Perf summary + CSV on quit ─────────────────────
 print("\n" + "=" * 60)
@@ -567,4 +574,4 @@ if PERF_CSV_ON_QUIT:
     print(f"\nWrote raw samples → {PERF_CSV_ON_QUIT}")
     print(f"Wrote bucket summary → {summary_path}")
 
-pygame.quit()
+

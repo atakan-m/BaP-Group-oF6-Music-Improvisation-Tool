@@ -105,15 +105,15 @@ def main():
                         pygame.quit()
                         return chord_prog
                     case pygame.K_q:
+                        chord_prog = []
+                    case pygame.K_ESCAPE:
                         done = True
-                    case _:
-                        print("Use w/s or up/down or c/d/q")
         #print("current chord:", chord_dict[current_chord[0]] + mod_dict[current_chord[1]])
         #print("current chord progression:", chord_prog)
         text = font.render("current chord:" + str(chord_dict[current_chord[0]]) + str(mod_dict[current_chord[1]]),True, BLACK)
         text1 = font1.render("current chord progression:" +  str(chord_prog),True, BLACK)
-        text2 = font1.render("Use w/s or arrow_up/arrow_down to change chord, press c to add to list and d to confirm", True, BLACK)
-        text3 = font1.render("Recommended: [Dm7, G7, Cmaj7, Cmaj7], press p to auto-input", True, BLACK)
+        text2 = font1.render("Use the blue and/or green buttons to change the chord. Press the yellow button to add to list and black to confirm", True, BLACK)
+        text3 = font1.render("Recommended: [Dm7, G7, Cmaj7, Cmaj7]", True, BLACK)
         screen.blit(text, [200, 200])
         screen.blit(text1, [200, 400])
         screen.blit(text2, [200, 600])
