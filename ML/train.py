@@ -1,14 +1,23 @@
-"""Train JazzLSTM on the 16th-note grid produced by `data_prep.py`.
+"""Train the JazzLSTM next-token model on the 16th-note grid dataset.
 
-Reads:
+The training data is consumed as random fixed-length chunks: each step
+picks a random solo and a random start offset inside it, then trains on
+plain next-token prediction with cross-entropy loss. Adam + cosine LR
+schedule with gradient clipping.
+
+Inputs (produced by data_prep.py):
     ML/data/processed/grid_solos.parquet
     ML/data/processed/chord_vocab.json
     ML/data/processed/metadata.json
-Writes:
-    ML/checkpoints/jazz_lstm.pt
 
-CLI:
-    python ML/train.py --epochs 30 --batch_size 64 --seq_len 256
+Output:
+    ML/models/<--out>     a checkpoint .pt file, overwritten at the end
+                          of every epoch (so an interrupted run still
+                          leaves a usable model on disk).
+
+CLI usage (example):
+    python ML/train.py --epochs 30 --batch_size 64 --seq_len 256 \
+                       --out jazz_lstm.pt
 """
 
 import argparse
@@ -27,10 +36,9 @@ from model import JazzLSTM
 
 DATA_DIR  = os.path.join("ML", "data", "processed")
 MODELS_DIR = os.path.join("ML", "models")
-# Default checkpoint filename. Override per-run with `--out <name>.pt`
-# (filename only — it's always written under ML/models/). Inference reads
-# the path in engine.py's DEFAULT_CHECKPOINT, so to use a model you just
-# trained you point that constant at the matching file.
+# Default checkpoint filename, written under ML/models/. Override per-run
+# with `--out <name>.pt`. To use a freshly trained checkpoint at inference,
+# point engine.py's DEFAULT_CHECKPOINT at the matching filename.
 DEFAULT_CKPT_NAME = "jazz_lstm_v2.pt"
 
 
@@ -39,11 +47,20 @@ DEFAULT_CKPT_NAME = "jazz_lstm_v2.pt"
 # ---------------------------------------------------------------
 
 def load_solos(seq_len):
-    """Read the parquet, attach chord (root, quality) ids, bundle per-solo
-    numpy arrays so random-chunk sampling is cache-friendly.
+    """Load the per-tick training data and prepare per-solo numpy arrays.
 
-    Solos shorter than seq_len+1 are dropped (can't sample a chunk).
-    Returns (solos, meta, n_qualities).
+    Reads grid_solos.parquet, attaches the (chord_root, chord_quality)
+    embedding ids from the chord vocab, and groups the data by solo so each
+    solo's token / root / quality / bar_pos sequences live in contiguous
+    numpy arrays for cache-friendly random sampling later.
+
+    Solos shorter than seq_len + 1 ticks are dropped — they can't yield a
+    full-length training chunk.
+
+    Returns:
+        solos       : list of dicts (one per solo) with the four arrays.
+        meta        : the metadata.json dict written by data_prep.
+        n_qualities : size of the chord-quality vocab (includes UNK).
     """
     df = pd.read_parquet(os.path.join(DATA_DIR, "grid_solos.parquet"))
     with open(os.path.join(DATA_DIR, "chord_vocab.json")) as f:
@@ -71,13 +88,20 @@ def load_solos(seq_len):
 
 
 def sample_batch(solos, batch_size, seq_len, rng):
-    """Random fixed-length chunks across the whole corpus.
+    """Build one training batch of random fixed-length chunks.
 
-    At chunk position j (j = 0..seq_len-1) the model gets:
-        prev_token = tokens[start + j]        (the token at j-1 absolute)
-        chord/bar  = features at tick start+j+1 (the tick being predicted)
-        target     = tokens[start + j + 1]
-    so the network is trained on next-token prediction.
+    For each batch element, pick a random solo and a random start offset
+    inside it, then slice out a contiguous (T = seq_len)-long window.
+    The slicing is set up so the model is trained on plain next-token
+    prediction:
+
+        At position j ∈ [0, T):
+            prev_token = tokens[start + j]            (input)
+            chord/bar  = features at tick start+j+1   (input)
+            target     = tokens[start + j + 1]        (label)
+
+    Returns five (B, T) long tensors in this order:
+        prev_token, chord_root, chord_quality, bar_position, target.
     """
     B, T = batch_size, seq_len
     pt = np.empty((B, T), dtype=np.int64)
@@ -102,6 +126,7 @@ def sample_batch(solos, batch_size, seq_len, rng):
 # ---------------------------------------------------------------
 
 def main():
+    """CLI entry point: parse args, build the model, run the training loop."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--epochs",          type=int,   default=30)
     ap.add_argument("--steps_per_epoch", type=int,   default=200)

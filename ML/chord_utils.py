@@ -1,20 +1,21 @@
 """Chord-string parsing and chord-vocabulary lookups.
 
-Shared by `data_prep.py` (used during training-data preparation), `engine.py`
-(used at inference to resolve user-typed chord strings), and `generate.py`
-(used by the offline CLI).
+Shared by three modules:
+    * data_prep.py — used during training-data preparation
+    * engine.py    — used at inference to resolve user-typed chord strings
+    * generate.py  — used by the offline MIDI-rendering CLI
 
 The vocabulary the model trains on stores chords as strings like "Dm7",
 "G7", "Cj7" (Jazz-Real-Book style). Each string is parsed into:
 
     (root_pitch_class, normalized_quality)
-        root_pitch_class : int in 0..11 (C, C#, D, …) or 12 = unknown
+        root_pitch_class   : int in 0..11 (C, C#, D, …) or 12 = unknown
         normalized_quality : short string like "-7", "j7", "7b9", "o", …
 
-The model takes (root, quality_id) as separate embeddings — splitting it
-this way lets the model share knowledge across all chords with the same
-quality (every "m7" behaves similarly relative to its root) and shrinks the
-vocab from ~300 chord strings to ~80 qualities × 12 roots.
+The model embeds (root, quality_id) separately. Splitting it this way lets
+the model share knowledge across all chords with the same quality (every
+"m7" behaves similarly relative to its root) and shrinks the vocab from
+~300 raw chord strings to ~80 qualities × 12 roots.
 """
 
 NOTE_TO_PC = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -27,7 +28,13 @@ UNK_ROOT_ID = 12       # reserved root id for unparseable chord strings
 # ---------------------------------------------------------------
 
 def parse_root(token):
-    """Split a chord head into (root_pc, remainder_string)."""
+    """Split a chord head into (root_pc, remainder_string).
+
+    Accepts a leading note letter optionally followed by a single sharp or
+    flat accidental, then returns the pitch class (0..11) and the rest of
+    the chord string for downstream quality parsing. Returns None if the
+    string doesn't start with a valid note letter.
+    """
     if not token:
         return None
     letter = token[0].upper()
@@ -46,7 +53,12 @@ def parse_root(token):
 
 
 def normalize_quality(q):
-    """Canonicalize chord-quality strings (maj7 → j7, min → -, etc.)."""
+    """Canonicalise chord-quality strings into the short Jazz-Real-Book form.
+
+    Folds aliases like "maj7", "M7", "Δ7" → "j7"; "min7", "Min7" → "-7";
+    "dim" → "o"; "aug" → "+"; a leading bare "m" (e.g. "m7") becomes "-7".
+    Empty input returns empty string.
+    """
     if not q:
         return ""
     for a, b in [
@@ -62,7 +74,12 @@ def normalize_quality(q):
 
 
 def parse_chord(s):
-    """Chord string → (root_pc, normalized_quality), or None if unparseable."""
+    """Top-level chord parser.
+
+    Returns (root_pc, normalized_quality) for any chord whose first character
+    is a valid note letter. Returns None for blank input or the special
+    sentinels "UNK" and "NC" (no chord).
+    """
     s = (s or "").strip()
     if not s or s in ("UNK", "NC"):
         return None
@@ -73,7 +90,13 @@ def parse_chord(s):
 
 
 def parse_key(s):
-    """Tonic of a solo's key string (e.g. 'Bb-maj' → 10)."""
+    """Extract the tonic pitch class from a key string.
+
+    Takes strings like "Bb-maj", "A-min" and returns the integer pitch class
+    of the tonic (10 and 9 respectively). Returns None if the leading letter
+    isn't a valid note. Used by data_prep.py to compute the transposition
+    shift that maps each solo to C tonic.
+    """
     if not s or not str(s).strip():
         return None
     head = str(s).split("-")[0].strip()
@@ -82,7 +105,12 @@ def parse_key(s):
 
 
 def transpose_chord(chord_string, semitones):
-    """Shift a chord string by `semitones`. Returns unchanged if unparseable."""
+    """Shift a chord by a number of semitones.
+
+    The quality is preserved; only the root letter changes. Sharps are used
+    for accidentals in the output. Returns the input string unchanged if it
+    can't be parsed (so UNK / NC pass through cleanly).
+    """
     p = parse_chord(chord_string)
     if p is None:
         return chord_string
@@ -95,13 +123,17 @@ def transpose_chord(chord_string, semitones):
 # ---------------------------------------------------------------
 
 def build_chord_tables(chord_vocab):
-    """From a list of chord strings, build the lookup tables the model needs.
+    """Build the chord lookup tables used by the model at train time.
+
+    The chord_vocab list typically comes from chord_vocab.json (produced by
+    data_prep.py). For every chord we precompute its embedding indices;
+    chords that fail to parse fall back to the reserved UNK ids.
 
     Returns:
-        chord_to_root : dict[str -> int]   chord_string -> root id (0..12)
-        chord_to_qual : dict[str -> int]   chord_string -> quality id
-        n_qualities   : int                size of the quality vocab (incl UNK)
-        qual_to_id    : dict[str -> int]   quality_string -> quality id
+        chord_to_root : dict[str -> int]  chord_string -> root id (0..12)
+        chord_to_qual : dict[str -> int]  chord_string -> quality id
+        n_qualities   : int               size of the quality vocab (incl UNK)
+        qual_to_id    : dict[str -> int]  quality_string -> quality id
     """
     qualities = set()
     for c in chord_vocab:
@@ -124,8 +156,12 @@ def build_chord_tables(chord_vocab):
 
 
 def chord_str_to_ids(chord_str, qual_to_id):
-    """Resolve any chord string (including ones not seen during training)
-    to (root_id, quality_id) for the embeddings, with UNK fallback."""
+    """Resolve a chord string to (root_id, quality_id) at inference time.
+
+    Used by engine.set_progression to encode the user-typed chord
+    progression. Out-of-vocabulary qualities and unparseable chords fall
+    back to the UNK ids so the model sees a defined input either way.
+    """
     unk_qid = qual_to_id["__UNK_Q__"]
     p = parse_chord(chord_str)
     if p is None:

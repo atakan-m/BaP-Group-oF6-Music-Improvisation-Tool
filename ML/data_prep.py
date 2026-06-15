@@ -1,24 +1,29 @@
 """Convert the Weimar Jazz Database into a 16th-note grid dataset.
 
-Pipeline:
-    1. Load melody + beats + solo_info from wjazzd.db.
-    2. Keep only 4/4 solos with a parseable key.
-    3. Forward-fill missing chord cells within each solo.
-    4. For each note, compute a fractional beat position from the real beat
-       onsets, then quantize to the 16th-note grid.
-    5. Transpose every solo (pitches + chord roots) to C.
-    6. Build a per-tick token sequence per solo:
-            token = REST | HOLD | NOTE_<midi>
-       plus per-tick chord and position-within-bar (0..15).
+This is the one-off offline preprocessing step that produces the tensors
+train.py later samples from. The pipeline is:
+
+    1. Load the melody, beats, and solo_info tables from wjazzd.db.
+    2. Keep only 4/4 solos with a parseable key signature.
+    3. Forward-fill missing chord cells within each solo so every beat
+       has a chord assigned.
+    4. For each note, compute a fractional beat position from the actual
+       beat onsets and quantise it to the 16th-note grid.
+    5. Transpose every solo (notes and chord roots together) so its tonic
+       becomes C — the model only ever sees C-tonic data.
+    6. Build a per-tick token sequence per solo. Each tick carries:
+            token   ∈ {REST, HOLD, NOTE_<midi>}
+            chord   chord string covering the tick
+            bar_pos position within the bar (0..15)
+
+Input:
+    ML/data/raw/wjazzd.db
 
 Outputs (to ML/data/processed/):
     grid_solos.parquet   one row per tick: (melid, tick, token, chord, bar_pos)
     chord_vocab.json     sorted chord-string list + 'UNK'
-    token_vocab.json     token names by id
-    metadata.json        vocab sizes, pitch range, etc.
-
-Input:
-    ML/data/raw/wjazzd.db
+    token_vocab.json     token names indexed by id
+    metadata.json        vocab sizes, pitch range, grid resolution, etc.
 """
 
 import json
@@ -42,6 +47,8 @@ RAW_DIR  = os.path.join("ML", "data", "raw")
 OUT_DIR  = os.path.join("ML", "data", "processed")
 DB_PATH  = os.path.join(RAW_DIR, "wjazzd.db")
 
+# Human-readable token names indexed by id. Written to token_vocab.json so
+# debugging tools can map a token id back to a recognisable string.
 TOKEN_NAMES = ["REST", "HOLD"] + [f"NOTE_{p}" for p in range(PITCH_LOW, PITCH_HIGH + 1)]
 
 
@@ -50,6 +57,12 @@ TOKEN_NAMES = ["REST", "HOLD"] + [f"NOTE_{p}" for p in range(PITCH_LOW, PITCH_HI
 # ----------------------------------------------------------------------
 
 def load_db():
+    """Read the three relevant tables from the Weimar Jazz DB.
+
+    Returns:
+        (melody, beats, solo_info) — three pandas DataFrames, ordered as the
+        SQL queries leave them so the downstream merges are deterministic.
+    """
     conn = sqlite3.connect(DB_PATH)
     melody = pd.read_sql(
         "SELECT melid, onset, pitch, duration, beatdur, bar, beat "
@@ -64,7 +77,13 @@ def load_db():
 
 
 def filter_valid_solos(solo_info):
-    """4/4 + parseable key, returns set of melids."""
+    """Return the set of melid values we keep for training.
+
+    A solo is kept iff its time signature is 4/4 and the key field is
+    parseable. The 4/4 restriction lets us use the fixed 16-tick bar
+    throughout, and the key parse is required by the C-tonic transposition
+    step downstream.
+    """
     keep = set()
     for _, row in solo_info.iterrows():
         if row["signature"] != "4/4":
@@ -80,7 +99,16 @@ def filter_valid_solos(solo_info):
 # ----------------------------------------------------------------------
 
 def prep_beats(beats):
-    """Forward-fill missing chord cells; compute beat_idx and beat_dur per row."""
+    """Clean up the beats table and compute per-row metadata.
+
+    Three operations:
+        * forward-fill missing chord cells within each solo so every beat
+          has a chord assigned;
+        * compute beat_idx, the cumulative beat number within the solo;
+        * compute beat_dur, the duration (in seconds) of each beat, with the
+          median per solo used as a fallback on the trailing beat where the
+          forward-difference is undefined.
+    """
     beats = beats.copy()
     beats["chord"] = beats["chord"].astype(str).str.strip()
     beats.loc[beats["chord"] == "", "chord"] = pd.NA
@@ -96,7 +124,16 @@ def prep_beats(beats):
 
 
 def align_notes(melody, beats):
-    """Merge melody+beats; compute fractional beat position + duration in beats."""
+    """Join the melody and beats tables, mapping every note to a grid tick.
+
+    For each note we compute:
+        frac      — its fractional position within the containing beat in
+                    [0, 1);
+        beat_pos  — absolute beat position (beat_idx + frac);
+        dur_beats — duration in beats (duration / beatdur);
+        tick      — quantised onset on the 16th-note grid;
+        dur_ticks — quantised duration in 16ths (clamped to ≥ 1).
+    """
     m = melody.dropna(subset=["bar", "beat", "pitch", "duration", "beatdur"]).copy()
     m["bar"]   = m["bar"].astype(int)
     m["beat"]  = m["beat"].astype(int)
@@ -118,8 +155,23 @@ def align_notes(melody, beats):
 # ----------------------------------------------------------------------
 
 def make_solo_grid(notes, beats_by_idx):
-    """Build the per-tick frame for one solo. Returns a DataFrame.
-    Notes must already be transposed, pitch-clipped, and sorted by tick."""
+    """Build the per-tick DataFrame for one solo.
+
+    The notes must already be transposed to C tonic, pitch-clipped to the
+    model's MIDI range, and sorted by tick. The tick origin is shifted so
+    the first note lands at tick 0, and the total length is rounded up to a
+    whole bar.
+
+    Each row in the returned frame holds:
+        tick     — 16th-note index 0..n_ticks-1;
+        token    — REST initially, becomes NOTE_<midi> at note onsets and
+                   HOLD on subsequent ticks for the note's duration;
+        chord    — the chord covering the beat that tick falls in, with
+                   "NC" as the fallback when no chord is known;
+        bar_pos  — tick % 16.
+
+    Returns None if the solo is too short to keep.
+    """
     if len(notes) < 10:
         return None
 
@@ -165,6 +217,7 @@ def make_solo_grid(notes, beats_by_idx):
 # ----------------------------------------------------------------------
 
 def main():
+    """End-to-end data-prep driver. Reads the DB, writes the four outputs."""
     print(f"[1] Loading {DB_PATH}")
     melody, beats, solo_info = load_db()
     print(f"    melody    : {len(melody):>7d}")
@@ -180,7 +233,9 @@ def main():
     m      = align_notes(melody, beats)
     print(f"[3] After beat alignment: {len(m)} notes")
 
-    # Transpose every solo so its tonic becomes C
+    # Transpose every solo so its tonic becomes C. shift = (0 - key) mod 12,
+    # so e.g. a G-major solo shifts up by 5 semitones (G+5 = C). Both the
+    # melody pitches and the chord roots are shifted by the same amount.
     key_lookup = dict(zip(solo_info.melid, solo_info.key))
     shifts = {mid: (0 - parse_key(key_lookup[mid])) % 12 for mid in keep}
     m["shift"]  = m["melid"].map(shifts)
@@ -193,7 +248,8 @@ def main():
     m = m[(m["pitch"] >= PITCH_LOW) & (m["pitch"] <= PITCH_HIGH)].copy()
     print(f"[4] Dropped {n_before - len(m)} notes outside [{PITCH_LOW}, {PITCH_HIGH}]")
 
-    # Build per-solo grid frames
+    # Build the per-solo grid frames. beats_by_solo is a beat-index → chord
+    # lookup used by make_solo_grid to assign a chord to every tick.
     beats_by_solo = {mid: dict(zip(g["beat_idx"], g["chord"]))
                      for mid, g in beats.groupby("melid")}
 
@@ -208,7 +264,9 @@ def main():
     big["chord"] = big["chord"].astype("string")
     print(f"[5] Built grids for {big.melid.nunique()} solos, {len(big)} ticks total")
 
-    # Chord vocab: chords seen >=10 times; rest -> 'UNK'
+    # Chord vocabulary cutoff: chords seen at least CHORD_MIN_COUNT times
+    # keep their string; everything rarer is collapsed to "UNK" so the
+    # quality embedding doesn't waste capacity on near-singletons.
     counts = Counter(big["chord"].tolist())
     common = {c for c, n in counts.items() if n >= CHORD_MIN_COUNT and c != "UNK"}
     big["chord"] = big["chord"].where(big["chord"].isin(common), "UNK")

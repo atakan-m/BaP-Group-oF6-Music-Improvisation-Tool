@@ -1,20 +1,18 @@
-"""Offline-MIDI CLI + a few re-exports for old import paths.
+"""Offline MIDI rendering CLI and compatibility re-exports.
 
-This module exists for two reasons:
+This module serves two purposes:
 
-1. **Offline MIDI generation** (the `main()` CLI below) — for testing the
-   model without booting Piano_display. Renders a solo + chord-comping
-   track to a Standard MIDI File you can open in any DAW.
+1. Offline MIDI generation — the main() CLI below renders a solo plus a
+   chord-comping track to a Standard MIDI File you can open in any DAW.
+   Useful for evaluating a trained checkpoint without booting Piano_display.
 
-2. **Re-exports from `engine.py`** so older scripts that did
-   `from generate import …` still work. Anything new should import
-   directly from `engine` and `model`.
+2. Compatibility re-exports — older scripts that did `from generate import
+   ...` continue to work. New code should import directly from `engine`
+   and `model`.
 
-The old static-sheet `generate_music(LSTMmodel, chord_to_id, …)` API has
-been removed — Piano_display now uses `realtime_sheet.RealtimeSheet`
-which drives the engine in realtime. Even when the player isn't playing,
-the engine treats silence as "follow the plan" and self-improvises, so
-there's no need for a separate offline generator inside Piano_display.
+The CLI drives the engine with TOK_REST every tick; the engine's silence-
+as-match path causes it to walk its own plan deterministically, producing
+the same output as the model would sample autoregressively.
 """
 
 # ----- Re-exports kept for older import paths --------------------------
@@ -37,7 +35,15 @@ from model import (
 # ======================================================================
 
 def _tokens_to_events(tokens):
-    """Token sequence -> list of (onset_tick, midi_pitch, duration_ticks)."""
+    """Convert a token sequence into discrete note events.
+
+    Walks the token stream; each NOTE_x starts a new event whose duration
+    is one plus the count of immediately following HOLDs. REST and any
+    HOLDs that precede the first NOTE are skipped.
+
+    Returns:
+        list of (onset_tick, midi_pitch, duration_ticks) triples.
+    """
     events, i, n = [], 0, len(tokens)
     while i < n:
         tok = int(tokens[i])
@@ -55,6 +61,9 @@ def _tokens_to_events(tokens):
     return events
 
 
+# Semitone intervals (from the root) used to voice each common chord
+# quality on the comping track. Qualities not listed are matched by prefix
+# (e.g. "-7b9" → "-7"); the fallback is the major triad.
 _CHORD_INTERVALS = {
     "":   [0, 4, 7],            "6":   [0, 4, 7, 9],
     "j":  [0, 4, 7, 11],        "j7":  [0, 4, 7, 11],
@@ -69,6 +78,12 @@ _CHORD_INTERVALS = {
 
 
 def _chord_voicing(chord_str, bass_min=36, upper_min=48):
+    """Return a MIDI-pitch list voicing a chord for the comping track.
+
+    Lays out one bass note at or above bass_min plus all interval pitches
+    above upper_min so the result lives in a comfortable piano-comping
+    register. Returns an empty list when the chord string can't be parsed.
+    """
     from chord_utils import parse_chord
     p = parse_chord(chord_str)
     if p is None:
@@ -89,6 +104,7 @@ def _chord_voicing(chord_str, bass_min=36, upper_min=48):
 
 
 def _vlq(n):
+    """Encode an integer as a MIDI variable-length quantity."""
     out = [n & 0x7F]
     n >>= 7
     while n:
@@ -98,13 +114,19 @@ def _vlq(n):
 
 
 def _make_track(payload):
+    """Wrap a track event payload in the standard MTrk header chunk."""
     import struct
     return b"MTrk" + struct.pack(">I", len(payload)) + bytes(payload)
 
 
 def write_midi(tokens, bar_chords, out_path, tempo_bpm=80, ticks_per_quarter=480):
-    """Render a token sequence + chord progression into a Standard MIDI File.
-    Three tracks: tempo, melody (channel 0), chord comping (channel 1)."""
+    """Write the generated solo to a Standard MIDI File.
+
+    The output is a multi-track MIDI file with three tracks:
+        track 1 — tempo meta information,
+        track 2 — the generated melody on MIDI channel 0,
+        track 3 — chord comping (one chord per bar) on MIDI channel 1.
+    """
     import struct
     grid = ticks_per_quarter // TICKS_PER_BEAT     # MIDI ticks per 16th
     bar_mt = TICKS_PER_BAR * grid
@@ -146,8 +168,13 @@ def write_midi(tokens, bar_chords, out_path, tempo_bpm=80, ticks_per_quarter=480
 # ======================================================================
 
 def main():
-    """Drive the engine into silence (REST is always treated as match) so
-    it walks its own plan, then export the result as MIDI."""
+    """CLI entry point: generate a solo over a chord progression and save as MIDI.
+
+    The engine is driven with TOK_REST every tick. Its silence-as-match path
+    commits the model's own predictions back into the persistent state, so
+    after `total_bars * 16` ticks the committed token sequence is exactly
+    what the model would have sampled autoregressively.
+    """
     import argparse
 
     ap = argparse.ArgumentParser()

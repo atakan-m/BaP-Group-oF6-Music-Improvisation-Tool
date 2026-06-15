@@ -1,20 +1,21 @@
-"""Lightweight perf-logger for measuring per-event timings.
+"""Lightweight performance logger for measuring per-event timings.
 
 Designed for the realtime engine on the Raspberry Pi: cheap to call inside
-the per-tick loop, doesn't allocate during the measurement, and gives you
-back the statistics that actually matter for realtime budgeting (p50, p95,
-p99, max — not just the mean, which hides the tail spikes that cause tick
-drops on the Pi).
+the per-tick loop, allocates nothing during the measurement, and reports
+the statistics that actually matter for realtime budgeting (p50, p95, p99,
+max — not just the mean, which hides the tail spikes that cause dropped
+ticks on the Pi).
 
-Typical usage from Piano_display:
+Typical usage from Piano_display.py:
 
     from perf import PerfLogger
     perf = PerfLogger("realtime")
 
-    # Per tick:
-    with perf.timed(engine.last_action_will_be_or_default):
+    # Per tick (bucket known up-front):
+    with perf.timed("commit"):
         rollout = engine.commit(played_token)
-    # Or, when you don't know the bucket up-front:
+
+    # Per tick (bucket determined by the call itself, e.g. last_action):
     t = perf.start()
     rollout = engine.commit(played_token)
     perf.stop(t, engine.last_action)
@@ -25,11 +26,10 @@ Typical usage from Piano_display:
     # On exit:
     perf.save_csv("commit_timings.csv")
 
-Bucketing by `engine.last_action` is the important bit — it separates the
-cheap match/silence commits (one LSTM forward) from the *expensive*
-deviation commits (`rollout_ticks` LSTM forwards in `_build_deviation_rollout`).
-That's where the realtime hits come from, and where you'd notice if Pi
-performance is tightening up.
+Bucketing by engine.last_action is the important bit — it separates the
+cheap match / silence commits (~2 LSTM forwards) from the expensive
+deviation commits, where the rollout is partially rebuilt and the per-tick
+cost spikes. The deviation bucket is the one to watch.
 """
 
 import csv
@@ -37,31 +37,35 @@ import time
 
 
 class PerfLogger:
-    """Buckets of duration samples (milliseconds), keyed by event label.
+    """Collects duration samples (in milliseconds) into named buckets.
 
-    Storage is a dict-of-lists; appending is O(1). No fancy ring buffer —
-    just don't run the program for hours. If memory is a concern, call
-    `clear()` periodically.
+    Storage is a dict-of-lists; appending each sample is O(1). There's no
+    ring buffer — for very long runs, call clear() periodically if memory
+    becomes an issue.
     """
 
     def __init__(self, name="perf"):
         self.name = name
-        # bucket_name -> list of durations in ms
+        # bucket_name -> list of durations in milliseconds.
         self.buckets = {}
 
-    # ----- recording ----------------------------------------------------
+    # ----- recording ---------------------------------------------------
     def start(self):
-        """Return a starting timestamp. Pass it to stop() with a bucket."""
+        """Return a starting timestamp. Pair with stop(t0, bucket) to record."""
         return time.perf_counter()
 
     def stop(self, t0, bucket):
-        """End a measurement started by start(t0) and record into `bucket`."""
+        """End a measurement started by start() and record into `bucket`.
+
+        Returns the elapsed time in milliseconds so the caller can log it
+        inline if desired.
+        """
         dt_ms = (time.perf_counter() - t0) * 1000.0
         self.record(bucket, dt_ms)
         return dt_ms
 
     def record(self, bucket, dt_ms):
-        """Append a raw duration sample (in ms) into the named bucket."""
+        """Append a duration sample (in milliseconds) to the named bucket."""
         b = self.buckets.get(bucket)
         if b is None:
             b = []
@@ -69,7 +73,7 @@ class PerfLogger:
         b.append(dt_ms)
 
     def timed(self, bucket):
-        """Context-manager wrapper around start/stop.
+        """Return a context-manager that times its body.
 
             with perf.timed("commit"):
                 engine.commit(...)
@@ -77,12 +81,17 @@ class PerfLogger:
         return _Timed(self, bucket)
 
     def clear(self):
-        """Drop all recorded samples."""
+        """Drop all recorded samples in every bucket."""
         self.buckets.clear()
 
-    # ----- statistics ---------------------------------------------------
+    # ----- statistics --------------------------------------------------
     @staticmethod
     def _stats(samples):
+        """Compute {n, mean, p50, p95, p99, max} for a list of samples.
+
+        Returns None for empty input. Percentiles are picked with a simple
+        sort-and-index — accurate enough for the sample counts we collect.
+        """
         if not samples:
             return None
         s = sorted(samples)
@@ -97,9 +106,12 @@ class PerfLogger:
         }
 
     def summary(self, recent_n=None):
-        """Return {bucket: stats_dict}. If recent_n is given, only consider
-        the last `recent_n` samples per bucket — useful for "what does the
-        last few seconds look like" without losing the historical record."""
+        """Return per-bucket aggregate stats as a dict.
+
+        If recent_n is given, only the last `recent_n` samples per bucket
+        are considered — useful for "how is performance right now" without
+        discarding the historical record.
+        """
         out = {}
         for name, samples in self.buckets.items():
             if not samples:
@@ -109,7 +121,11 @@ class PerfLogger:
         return out
 
     def print_summary(self, recent_n=None, header=True):
-        """Pretty-print a summary table to stdout."""
+        """Pretty-print a summary table to stdout.
+
+        Buckets are sorted so that deviation is always at the top — that's
+        the spike most worth watching during a realtime run.
+        """
         stats = self.summary(recent_n)
         if not stats:
             return
@@ -128,11 +144,13 @@ class PerfLogger:
                   f"{s['p50']:>7.2f} {s['p95']:>7.2f} "
                   f"{s['p99']:>7.2f} {s['max']:>7.2f}")
 
-    # ----- export -------------------------------------------------------
+    # ----- export ------------------------------------------------------
     def save_csv(self, path):
-        """Dump every raw sample to CSV (bucket, sample_idx, duration_ms).
-        Lets you analyse the distribution properly in a spreadsheet or
-        a plotting tool."""
+        """Dump every raw sample to a CSV file.
+
+        Columns: bucket, sample_idx, duration_ms. Suitable for loading into
+        a spreadsheet or plotting tool to inspect the full distribution.
+        """
         with open(path, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["bucket", "sample_idx", "duration_ms"])
@@ -141,7 +159,10 @@ class PerfLogger:
                     w.writerow([name, i, f"{dt:.4f}"])
 
     def save_summary_csv(self, path, recent_n=None):
-        """Dump the aggregated summary (one row per bucket)."""
+        """Dump the aggregated summary (one row per bucket) to CSV.
+
+        Columns: bucket, n, mean_ms, p50_ms, p95_ms, p99_ms, max_ms.
+        """
         stats = self.summary(recent_n)
         with open(path, "w", newline="") as f:
             w = csv.writer(f)
@@ -155,7 +176,11 @@ class PerfLogger:
 
 
 class _Timed:
-    """Context-manager returned by PerfLogger.timed()."""
+    """Internal context manager returned by PerfLogger.timed().
+
+    Records the elapsed time on __exit__ regardless of whether the body
+    raised; uses __slots__ to keep allocation cost down inside hot loops.
+    """
     __slots__ = ("perf", "bucket", "t0")
 
     def __init__(self, perf, bucket):
