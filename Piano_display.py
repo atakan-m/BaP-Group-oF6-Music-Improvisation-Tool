@@ -667,8 +667,8 @@ while True:
         # the figures closest to the play line carry the new plan; the
         # change "wave" then propagates outward across the next few ticks
         # as the rollout regrows.
-        deviation_initial_fresh=2,
-        rollout_extend_per_tick=4,
+        deviation_initial_fresh=1,
+        rollout_extend_per_tick=1,
     )
 
     # Pre-fill the displayable sheet with the engine's initial rollout so
